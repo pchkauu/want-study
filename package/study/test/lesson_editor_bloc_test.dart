@@ -161,7 +161,8 @@ void main() {
 
   testWidgets('shows the empty study state', (tester) async {
     final studyRepository = _MockStudyRepository();
-    when(studyRepository.listStudies).thenAnswer(_emptyStudies);
+    when(() => studyRepository.listStudies(includeArchived: true))
+        .thenAnswer(_emptyStudies);
     final facade = StudyFeatureFacadeV1(
       config: const Config(),
       studyRepository: studyRepository,

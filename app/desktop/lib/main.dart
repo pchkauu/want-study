@@ -5,6 +5,7 @@ import 'package:observatory/observatory.dart' as observatory;
 import 'package:study/study.dart' as study;
 import 'package:want_study_desktop/src/dependency/injection.dart';
 import 'package:want_study_desktop/src/navigation/app_router.dart';
+import 'package:want_study_desktop/src/theme/app_theme.dart';
 
 Future<void> main() => observatory.Observatory.run<void>(
   config: const observatory.Config(
@@ -45,9 +46,9 @@ final class WantStudyApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp.router(
     title: 'Want Study',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF315C46)),
-    ),
+    theme: buildWantStudyTheme(),
+    darkTheme: buildWantStudyTheme(),
+    themeMode: ThemeMode.dark,
     routerConfig: router.config(
       navigatorObservers: () => observatory.Observatory.navigatorObservers,
     ),

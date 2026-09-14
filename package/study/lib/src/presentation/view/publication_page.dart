@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:study/src/application/bloc/publication_bloc.dart';
 import 'package:study/src/domain/model/study.dart';
 import 'package:study/src/domain/repository/study_publication_repository.dart';
+import 'package:study/src/presentation/widget/study_ui.dart';
 
 final class PublicationPageV1 extends StatefulWidget {
   final StudyV1 study;
@@ -29,6 +30,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   void initState() {
     super.initState();
     _bloc = PublicationBlocV1(widget.repository);
+    _message.addListener(_onMessageChanged);
   }
 
   @override
@@ -41,10 +43,13 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
 
   @override
   void dispose() {
+    _message.removeListener(_onMessageChanged);
     _message.dispose();
     _bloc.close();
     super.dispose();
   }
+
+  void _onMessageChanged() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -62,111 +67,210 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Публикация',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Предпросмотр не меняет репозиторий. Запись и push выполняются только после подтверждения.',
+                  const StudySectionHeader(
+                    title: 'Публикация',
+                    description:
+                        'Проверьте Markdown diff перед записью и push.',
                   ),
                   const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      FilledButton.icon(
-                        onPressed:
-                            state.loadState ==
-                                    PublicationLoadStateV1.preparing ||
-                                state.loadState ==
-                                    PublicationLoadStateV1.publishing
-                            ? null
-                            : () => _bloc.add(
-                                PublicationPreviewRequestedV1(widget.study),
-                              ),
-                        icon: const Icon(Icons.preview_outlined),
-                        label: const Text('Построить предпросмотр'),
-                      ),
-                      if (state.loadState == PublicationLoadStateV1.preparing ||
-                          state.loadState ==
-                              PublicationLoadStateV1.publishing) ...[
-                        const SizedBox(width: 16),
-                        const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ],
-                      if (state.loadState ==
-                          PublicationLoadStateV1.pushFailed) ...[
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              _bloc.add(const PublicationPushRetriedV1()),
-                          icon: const Icon(Icons.cloud_upload_outlined),
-                          label: const Text('Повторить push'),
-                        ),
-                      ],
-                    ],
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, _) {
+                        final compact = MediaQuery.sizeOf(context).width < 960;
+                        final controls = _buildControls(context, state);
+                        final diff = _buildDiff(context, state);
+                        if (compact) {
+                          return Column(
+                            children: [
+                              SizedBox(height: 280, child: controls),
+                              const SizedBox(height: 16),
+                              Expanded(child: diff),
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(width: 360, child: controls),
+                            const SizedBox(width: 16),
+                            Expanded(child: diff),
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                  if (state.preview != null) ...[
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _message,
-                      maxLength: 200,
-                      decoration: const InputDecoration(
-                        labelText: 'Сообщение коммита',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLow,
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
-                          child: SelectableText(
-                            state.preview!.diff.isEmpty
-                                ? 'Изменений нет.'
-                                : state.preview!.diff,
-                            style: const TextStyle(fontFamily: 'monospace'),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton.icon(
-                        onPressed:
-                            state.loadState ==
-                                    PublicationLoadStateV1.publishing ||
-                                _message.text.trim().isEmpty
-                            ? null
-                            : _confirm,
-                        icon: const Icon(Icons.publish),
-                        label: const Text('Записать, commit и push'),
-                      ),
-                    ),
-                  ] else
-                    const Expanded(
-                      child: Center(
-                        child: Text(
-                          'Сначала постройте безопасный предпросмотр.',
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
           ),
     );
+  }
+
+  Widget _buildControls(BuildContext context, PublicationBlocStateV1 state) {
+    final busy =
+        state.loadState == PublicationLoadStateV1.preparing ||
+        state.loadState == PublicationLoadStateV1.publishing;
+    final (statusLabel, statusIcon, statusColor) = _publicationStatus(
+      context,
+      state.loadState,
+    );
+    return StudySurface(
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(statusIcon, size: 18, color: statusColor),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    statusLabel,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge
+                        ?.copyWith(color: statusColor),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Предпросмотр не меняет репозиторий. Запись выполняется только после подтверждения.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () =>
+                        _bloc.add(PublicationPreviewRequestedV1(widget.study)),
+              icon: busy
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.preview_outlined),
+              label: const Text('Построить предпросмотр'),
+            ),
+            if (state.loadState == PublicationLoadStateV1.pushFailed) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => _bloc.add(const PublicationPushRetriedV1()),
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('Повторить push'),
+              ),
+            ],
+            if (state.preview != null) ...[
+              const SizedBox(height: 22),
+              TextField(
+                controller: _message,
+                maxLength: 200,
+                decoration: const InputDecoration(
+                  labelText: 'Сообщение коммита',
+                ),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed:
+                    state.loadState == PublicationLoadStateV1.publishing ||
+                        _message.text.trim().isEmpty
+                    ? null
+                    : _confirm,
+                icon: const Icon(Icons.publish),
+                label: const Text('Записать и отправить'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiff(BuildContext context, PublicationBlocStateV1 state) {
+    final preview = state.preview;
+    return StudySurface(
+      padding: EdgeInsets.zero,
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      child: preview == null
+          ? const StudyStateView(
+              icon: Icons.difference_outlined,
+              title: 'Предпросмотр не построен',
+              description: 'Сначала проверьте изменения управляемых файлов.',
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                  child: Text(
+                    'Markdown diff',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                const Divider(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(18),
+                    child: SelectableText(
+                      preview.diff.isEmpty ? 'Изменений нет.' : preview.diff,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  (String, IconData, Color) _publicationStatus(
+    BuildContext context,
+    PublicationLoadStateV1 state,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return switch (state) {
+      PublicationLoadStateV1.initial => (
+        'Готово к проверке',
+        Icons.shield_outlined,
+        scheme.onSurfaceVariant,
+      ),
+      PublicationLoadStateV1.preparing => (
+        'Строится предпросмотр',
+        Icons.sync,
+        scheme.primary,
+      ),
+      PublicationLoadStateV1.ready => (
+        'Предпросмотр готов',
+        Icons.check_circle_outline,
+        scheme.tertiary,
+      ),
+      PublicationLoadStateV1.publishing => (
+        'Публикация',
+        Icons.cloud_upload_outlined,
+        scheme.primary,
+      ),
+      PublicationLoadStateV1.published => (
+        'Опубликовано',
+        Icons.cloud_done_outlined,
+        scheme.tertiary,
+      ),
+      PublicationLoadStateV1.pushFailed => (
+        'Push не выполнен',
+        Icons.cloud_off_outlined,
+        studyWarningColor,
+      ),
+      PublicationLoadStateV1.failed => (
+        'Проверка не выполнена',
+        Icons.error_outline,
+        scheme.error,
+      ),
+    };
   }
 
   Future<void> _confirm() async {

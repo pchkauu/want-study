@@ -5,6 +5,7 @@ import 'package:observatory/observatory.dart';
 import 'package:study/study.dart';
 import 'package:want_study_desktop/src/dependency/injection.dart';
 import 'package:want_study_desktop/src/infrastructure/app_adapter.dart';
+import 'package:want_study_desktop/src/theme/app_theme.dart';
 
 part 'app_router.gr.dart';
 
@@ -20,7 +21,9 @@ final class AppRouter extends RootStackRouter {
 
 @RoutePage()
 final class StudyScreen extends StatefulWidget {
-  const StudyScreen({super.key});
+  final Future<bool> Function()? healthCheck;
+
+  const StudyScreen({this.healthCheck, super.key});
 
   @override
   State<StudyScreen> createState() => _StudyScreenState();
@@ -32,8 +35,11 @@ final class _StudyScreenState extends State<StudyScreen> {
   @override
   void initState() {
     super.initState();
-    _health = getIt<HealthGatewayV1>().isServing();
+    _health = _checkHealth();
   }
+
+  Future<bool> _checkHealth() =>
+      widget.healthCheck?.call() ?? getIt<HealthGatewayV1>().isServing();
 
   @override
   Widget build(BuildContext context) {
@@ -41,9 +47,7 @@ final class _StudyScreenState extends State<StudyScreen> {
       future: _health,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: _HealthSkeleton());
         }
         if (!(snapshot.data ?? false)) {
           return Scaffold(
@@ -52,26 +56,66 @@ final class _StudyScreenState extends State<StudyScreen> {
               actions: [_diagnosticsButton(context)],
             ),
             body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.cloud_off_outlined, size: 56),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Локальный сервис недоступен',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  const SelectableText('Запустите: docker compose up -d'),
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: () => setState(
-                      () => _health = getIt<HealthGatewayV1>().isServing(),
+              child: Container(
+                width: 520,
+                padding: const EdgeInsets.all(40),
+                decoration: BoxDecoration(
+                  color: WantStudyColor.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: WantStudyColor.outline),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: WantStudyColor.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Icon(
+                        Icons.cloud_off_outlined,
+                        color: WantStudyColor.error,
+                        size: 30,
+                      ),
                     ),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Проверить снова'),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    Text(
+                      'Локальный сервис недоступен',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Запустите сервисы и повторите проверку.',
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: WantStudyColor.textMuted),
+                    ),
+                    const SizedBox(height: 16),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: WantStudyColor.background,
+                        borderRadius: BorderRadius.all(Radius.circular(12)),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        child: SelectableText(
+                          'docker compose up -d',
+                          style: TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: () => setState(() => _health = _checkHealth()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Проверить снова'),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -79,7 +123,11 @@ final class _StudyScreenState extends State<StudyScreen> {
         return Stack(
           children: [
             Positioned.fill(child: getIt<StudyFeatureFacadeV1>().buildRoot()),
-            Positioned(top: 12, right: 12, child: _diagnosticsButton(context)),
+            Positioned(
+              left: MediaQuery.sizeOf(context).width >= 1200 ? 20 : 14,
+              bottom: 18,
+              child: _diagnosticsButton(context),
+            ),
           ],
         );
       },
@@ -91,6 +139,51 @@ final class _StudyScreenState extends State<StudyScreen> {
     tooltip: 'Локальные логи',
     icon: const Icon(Icons.monitor_heart_outlined),
   );
+}
+
+final class _HealthSkeleton extends StatelessWidget {
+  const _HealthSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.surfaceContainerHigh;
+    return Center(
+      child: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              width: 260,
+              height: 24,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: 340,
+              height: 14,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(7),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 @RoutePage()

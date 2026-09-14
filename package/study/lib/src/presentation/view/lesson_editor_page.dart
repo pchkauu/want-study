@@ -11,6 +11,7 @@ import 'package:study/src/domain/model/note_block.dart';
 import 'package:study/src/domain/model/study_enum.dart';
 import 'package:study/src/domain/repository/knowledge_repository.dart';
 import 'package:study/src/domain/repository/lesson_content_repository.dart';
+import 'package:study/src/presentation/widget/study_ui.dart';
 import 'package:uuid/uuid.dart';
 
 final class LessonEditorPageV1 extends StatefulWidget {
@@ -77,17 +78,63 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                   length: 3,
                   child: Scaffold(
                     appBar: AppBar(
-                      title: Text(widget.lesson.title),
-                      bottom: const TabBar(
-                        tabs: [
-                          Tab(text: 'Конспект'),
-                          Tab(text: 'Домашняя работа'),
-                          Tab(text: 'Файлы'),
+                      toolbarHeight: 74,
+                      leadingWidth: 64,
+                      leading: Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: IconButton(
+                          tooltip: 'Назад',
+                          onPressed: () => Navigator.maybePop(context),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                        ),
+                      ),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.lesson.sourcePosition.isNotEmpty)
+                            Text(
+                              widget.lesson.sourcePosition,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          Text(
+                            widget.lesson.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ],
+                      ),
+                      bottom: PreferredSize(
+                        preferredSize: const Size.fromHeight(54),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const TabBar(
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                padding: EdgeInsets.all(4),
+                                indicatorSize: TabBarIndicatorSize.tab,
+                                dividerHeight: 0,
+                                tabs: [
+                                  Tab(text: 'Конспект'),
+                                  Tab(text: 'Домашняя работа'),
+                                  Tab(text: 'Файлы'),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                       actions: [
                         _SaveBadge(state: state.saveState),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 20),
                       ],
                     ),
                     body: _body(state),
@@ -102,16 +149,17 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
   Widget _body(LessonEditorStateV1 state) {
     if (state.loadState == LessonEditorLoadStateV1.loading ||
         state.loadState == LessonEditorLoadStateV1.initial) {
-      return const Center(child: CircularProgressIndicator());
+      return const StudySkeleton();
     }
     final workspace = state.workspace;
     if (workspace == null) {
-      return Center(
-        child: FilledButton.icon(
-          onPressed: () => _bloc.add(LessonEditorStartedV1(widget.lesson.id)),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Повторить'),
-        ),
+      return StudyStateView(
+        icon: Icons.cloud_off_outlined,
+        title: 'Урок не загрузился',
+        description: 'Проверьте локальный сервис и повторите попытку.',
+        actionLabel: 'Повторить',
+        actionIcon: Icons.refresh_rounded,
+        onAction: () => _bloc.add(LessonEditorStartedV1(widget.lesson.id)),
       );
     }
     return TabBarView(
@@ -552,16 +600,49 @@ final class _SaveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, label) = switch (state) {
-      SaveStateV1.dirty => (Icons.edit_outlined, 'Есть изменения'),
-      SaveStateV1.saving => (Icons.sync, 'Сохранение'),
-      SaveStateV1.saved => (Icons.cloud_done_outlined, 'Сохранено'),
-      SaveStateV1.failed => (Icons.cloud_off_outlined, 'Ошибка'),
-      SaveStateV1.conflict => (Icons.warning_amber, 'Конфликт'),
-      SaveStateV1.clean => (Icons.cloud_done_outlined, 'Сохранено'),
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, label, color) = switch (state) {
+      SaveStateV1.dirty => (
+        Icons.edit_outlined,
+        'Есть изменения',
+        studyWarningColor,
+      ),
+      SaveStateV1.saving => (Icons.sync, 'Сохранение', scheme.primary),
+      SaveStateV1.saved => (
+        Icons.cloud_done_outlined,
+        'Сохранено',
+        scheme.tertiary,
+      ),
+      SaveStateV1.failed => (Icons.cloud_off_outlined, 'Ошибка', scheme.error),
+      SaveStateV1.conflict => (
+        Icons.warning_amber_rounded,
+        'Конфликт',
+        studyWarningColor,
+      ),
+      SaveStateV1.clean => (
+        Icons.cloud_done_outlined,
+        'Сохранено',
+        scheme.tertiary,
+      ),
     };
-    return Row(
-      children: [Icon(icon, size: 18), const SizedBox(width: 6), Text(label)],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium
+                ?.copyWith(color: color),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -585,33 +666,50 @@ final class _NoteView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: block.isEmpty
-              ? const Center(child: Text('Добавьте первый блок конспекта.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: block.length,
-                  itemBuilder: (context, index) => _BlockEditor(
-                    key: ValueKey(block[index].id),
-                    block: block[index],
-                    onChanged: onChanged,
-                    onDelete: () => onDelete(block[index]),
-                    onConcept: () => onConcept(block[index]),
-                    onMove: (offset) => onMove(block[index], offset),
-                  ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: StudySurface(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
+              child: StudySectionHeader(
+                title: 'Конспект',
+                description: 'Пишите в Markdown и сразу проверяйте результат.',
+                trailing: FilledButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Добавить блок'),
                 ),
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: block.isEmpty
+                  ? StudyStateView(
+                      icon: Icons.notes_rounded,
+                      title: 'Конспект пока пуст',
+                      description: 'Добавьте первый смысловой блок.',
+                      actionLabel: 'Добавить блок',
+                      onAction: onAdd,
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(18),
+                      itemCount: block.length,
+                      itemBuilder: (context, index) => _BlockEditor(
+                        key: ValueKey(block[index].id),
+                        block: block[index],
+                        onChanged: onChanged,
+                        onDelete: () => onDelete(block[index]),
+                        onConcept: () => onConcept(block[index]),
+                        onMove: (offset) => onMove(block[index], offset),
+                      ),
+                    ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add),
-            label: const Text('Добавить блок'),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -654,20 +752,33 @@ final class _BlockEditorState extends State<_BlockEditor> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Expanded(
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                   child: Text(
                     _blockLabel(widget.block.type),
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                 ),
+                const Spacer(),
                 IconButton(
                   tooltip: 'Выше',
                   onPressed: () => widget.onMove(-1),
@@ -693,27 +804,37 @@ final class _BlockEditorState extends State<_BlockEditor> {
             const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
-                final editor = TextField(
-                  controller: _controller,
-                  minLines: 8,
-                  maxLines: 20,
-                  onChanged: (value) =>
-                      widget.onChanged(widget.block.copyWith(markdown: value)),
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: 'Markdown',
+                final editor = SizedBox(
+                  height: 300,
+                  child: TextField(
+                    controller: _controller,
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      height: 1.45,
+                    ),
+                    onChanged: (value) => widget.onChanged(
+                      widget.block.copyWith(markdown: value),
+                    ),
+                    decoration: const InputDecoration(hintText: 'Markdown'),
                   ),
                 );
                 final preview = DecoratedBox(
                   decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
                     border: Border.all(
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: SizedBox(
-                    height: 260,
-                    child: Markdown(data: _controller.text),
+                    height: 300,
+                    child: Markdown(
+                      data: _controller.text,
+                      padding: const EdgeInsets.all(18),
+                    ),
                   ),
                 );
                 if (constraints.maxWidth < 800) {
@@ -757,85 +878,125 @@ final class _HomeworkView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: task.isEmpty
-              ? const Center(child: Text('Домашних заданий пока нет.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: task.length,
-                  itemBuilder: (context, index) {
-                    final item = task[index];
-                    return Card(
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                tooltip: 'Выше',
-                                onPressed: () => onMove(item, -1),
-                                icon: const Icon(Icons.arrow_upward),
-                              ),
-                              IconButton(
-                                tooltip: 'Ниже',
-                                onPressed: () => onMove(item, 1),
-                                icon: const Icon(Icons.arrow_downward),
-                              ),
-                              IconButton(
-                                tooltip: 'Изменить задание',
-                                onPressed: () => onEdit(item),
-                                icon: const Icon(Icons.edit_outlined),
-                              ),
-                              IconButton(
-                                tooltip: 'Удалить задание',
-                                onPressed: () => onDelete(item),
-                                icon: const Icon(Icons.delete_outline),
-                              ),
-                            ],
-                          ),
-                          CheckboxListTile(
-                            value: item.status == HomeworkStatusV1.done,
-                            onChanged: (value) => onChanged(
-                              item.copyWith(
-                                status: value ?? false
-                                    ? HomeworkStatusV1.done
-                                    : HomeworkStatusV1.todo,
-                              ),
-                            ),
-                            title: MarkdownBody(data: item.promptMarkdown),
-                            subtitle: Column(
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: StudySurface(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
+              child: StudySectionHeader(
+                title: 'Домашняя работа',
+                description: 'Условия, решения и сроки выполнения.',
+                trailing: FilledButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add_task),
+                  label: const Text('Добавить задание'),
+                ),
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: task.isEmpty
+                  ? StudyStateView(
+                      icon: Icons.task_alt_outlined,
+                      title: 'Заданий пока нет',
+                      description: 'Добавьте условие и решение первой задачи.',
+                      actionLabel: 'Добавить задание',
+                      onAction: onAdd,
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(18),
+                      itemCount: task.length,
+                      itemBuilder: (context, index) {
+                        final item = task[index];
+                        final done = item.status == HomeworkStatusV1.done;
+                        return Card(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLow,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (item.dueAt != null)
-                                  Text('Срок: ${_dateLabel(item.dueAt!)}'),
-                                if (item.solutionMarkdown.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: MarkdownBody(
-                                      data:
-                                          '**Решение**\n\n${item.solutionMarkdown}',
+                                Checkbox(
+                                  value: done,
+                                  onChanged: (value) => onChanged(
+                                    item.copyWith(
+                                      status: value ?? false
+                                          ? HomeworkStatusV1.done
+                                          : HomeworkStatusV1.todo,
                                     ),
                                   ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      MarkdownBody(data: item.promptMarkdown),
+                                      if (item.dueAt != null) ...[
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'Срок: ${_dateLabel(item.dueAt!)}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: studyWarningColor,
+                                              ),
+                                        ),
+                                      ],
+                                      if (item.solutionMarkdown.isNotEmpty) ...[
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          'Решение',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelLarge,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        MarkdownBody(
+                                          data: item.solutionMarkdown,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Выше',
+                                  onPressed: () => onMove(item, -1),
+                                  icon: const Icon(Icons.arrow_upward),
+                                ),
+                                IconButton(
+                                  tooltip: 'Ниже',
+                                  onPressed: () => onMove(item, 1),
+                                  icon: const Icon(Icons.arrow_downward),
+                                ),
+                                IconButton(
+                                  tooltip: 'Изменить задание',
+                                  onPressed: () => onEdit(item),
+                                  icon: const Icon(Icons.edit_outlined),
+                                ),
+                                IconButton(
+                                  tooltip: 'Удалить задание',
+                                  onPressed: () => onDelete(item),
+                                  icon: const Icon(Icons.delete_outline),
+                                ),
                               ],
                             ),
                           ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add_task),
-            label: const Text('Добавить задание'),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -855,31 +1016,48 @@ final class _FileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: file.isEmpty
-              ? const Center(child: Text('Файлов пока нет.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: file.length,
-                  itemBuilder: (context, index) => _CodeFileEditor(
-                    key: ValueKey(file[index].id),
-                    file: file[index],
-                    onSaved: onChanged,
-                    onDelete: () => onDelete(file[index]),
-                  ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: StudySurface(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
+              child: StudySectionHeader(
+                title: 'Файлы',
+                description: 'UTF-8 файлы урока и домашних заданий.',
+                trailing: FilledButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.note_add_outlined),
+                  label: const Text('Добавить файл'),
                 ),
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: file.isEmpty
+                  ? StudyStateView(
+                      icon: Icons.code_rounded,
+                      title: 'Файлов пока нет',
+                      description: 'Добавьте исходный код или текстовый файл.',
+                      actionLabel: 'Добавить файл',
+                      onAction: onAdd,
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(18),
+                      itemCount: file.length,
+                      itemBuilder: (context, index) => _CodeFileEditor(
+                        key: ValueKey(file[index].id),
+                        file: file[index],
+                        onSaved: onChanged,
+                        onDelete: () => onDelete(file[index]),
+                      ),
+                    ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.note_add_outlined),
-            label: const Text('Добавить файл'),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -918,9 +1096,10 @@ final class _CodeFileEditorState extends State<_CodeFileEditor> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -950,8 +1129,8 @@ final class _CodeFileEditorState extends State<_CodeFileEditor> {
               controller: _controller,
               minLines: 10,
               maxLines: 24,
-              style: const TextStyle(fontFamily: 'monospace'),
-              decoration: const InputDecoration(border: OutlineInputBorder()),
+              style: const TextStyle(fontFamily: 'monospace', height: 1.45),
+              decoration: const InputDecoration(hintText: 'Содержимое файла'),
             ),
           ],
         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:graphview/GraphView.dart';
 import 'package:study/src/application/safe_call.dart';
 import 'package:study/src/application/slug.dart';
@@ -7,6 +8,7 @@ import 'package:study/src/domain/model/concept_graph.dart';
 import 'package:study/src/domain/model/concept_relation.dart';
 import 'package:study/src/domain/model/study_enum.dart';
 import 'package:study/src/domain/repository/knowledge_repository.dart';
+import 'package:study/src/presentation/widget/study_ui.dart';
 import 'package:uuid/uuid.dart';
 
 final class ConceptPageV1 extends StatefulWidget {
@@ -53,116 +55,98 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: SearchBar(
-                  controller: _search,
-                  hintText: 'Поиск понятия или псевдонима',
-                  leading: const Icon(Icons.search),
-                  onChanged: (_) => _runSearch(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: _create,
-                icon: const Icon(Icons.add),
-                label: const Text('Понятие'),
-              ),
-            ],
-          ),
-        ),
-        if (_result.isNotEmpty)
-          SizedBox(
-            height: 56,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              scrollDirection: Axis.horizontal,
-              itemCount: _result.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final concept = _result[index];
-                return ActionChip(
-                  label: Text(
-                    concept.isArchived
-                        ? '${concept.title} · архив'
-                        : concept.title,
-                  ),
-                  onPressed: concept.isArchived
-                      ? () => _toggleArchive(concept)
-                      : () => _select(concept.id),
-                );
-              },
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          StudySectionHeader(
+            title: 'Понятия',
+            description: 'Связи, псевдонимы и упоминания в конспектах.',
+            trailing: FilledButton.icon(
+              onPressed: _create,
+              icon: const Icon(Icons.add),
+              label: const Text('Понятие'),
             ),
           ),
-        Expanded(child: _body()),
-      ],
+          const SizedBox(height: 18),
+          SearchBar(
+            controller: _search,
+            hintText: 'Поиск понятия или псевдонима',
+            leading: const Icon(Icons.search),
+            elevation: const WidgetStatePropertyAll(0),
+            backgroundColor: WidgetStatePropertyAll(
+              Theme.of(context).colorScheme.surfaceContainerHigh,
+            ),
+            side: WidgetStatePropertyAll(
+              BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            ),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onChanged: (_) => _runSearch(),
+          ),
+          if (_result.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 42,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _result.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final concept = _result[index];
+                  return ActionChip(
+                    label: Text(
+                      concept.isArchived
+                          ? '${concept.title} (архив)'
+                          : concept.title,
+                    ),
+                    onPressed: concept.isArchived
+                        ? () => _toggleArchive(concept)
+                        : () => _select(concept.id),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Expanded(child: _body()),
+        ],
+      ),
     );
   }
 
   Widget _body() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const StudySkeleton(compact: true);
     }
     final graph = _graph;
     if (graph == null) {
-      return Center(
-        child: FilledButton.icon(
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Повторить'),
-        ),
+      return StudyStateView(
+        icon: Icons.cloud_off_outlined,
+        title: 'Граф не загрузился',
+        description: 'Проверьте локальный сервис и повторите попытку.',
+        actionLabel: 'Повторить',
+        actionIcon: Icons.refresh_rounded,
+        onAction: _load,
       );
     }
     if (graph.concept.isEmpty) {
-      return const Center(child: Text('Добавьте первое понятие.'));
+      return StudyStateView(
+        icon: Icons.hub_outlined,
+        title: 'Граф пока пуст',
+        description: 'Добавьте первое понятие и свяжите его с конспектом.',
+        actionLabel: 'Добавить понятие',
+        onAction: _create,
+      );
     }
     final view = _buildGraph(graph);
     final selected = graph.concept
         .where((concept) => concept.id == _selectedId)
         .firstOrNull;
-    return Column(
-      children: [
-        if (graph.isTruncated)
-          const MaterialBanner(
-            content: Text('Показан выбранный узел и два уровня соседей.'),
-            actions: [SizedBox.shrink()],
-          ),
-        Expanded(
-          child: InteractiveViewer(
-            constrained: false,
-            boundaryMargin: const EdgeInsets.all(120),
-            minScale: 0.1,
-            maxScale: 3,
-            child: GraphView(
-              graph: view.$1,
-              algorithm: FruchtermanReingoldAlgorithm(
-                FruchtermanReingoldConfiguration(iterations: 250),
-              ),
-              paint: Paint()
-                ..color = Theme.of(context).colorScheme.outline
-                ..strokeWidth = 1.2,
-              builder: (node) {
-                final id = node.key?.value as String;
-                final concept = view.$2[id]!;
-                final selected = concept.id == _selectedId;
-                return InputChip(
-                  selected: selected,
-                  label: Text(concept.title),
-                  onPressed: () => _select(concept.id),
-                  onDeleted: selected ? () => _edit(concept) : null,
-                  deleteIcon: const Icon(Icons.edit_outlined, size: 18),
-                );
-              },
-            ),
-          ),
-        ),
-        if (selected != null)
-          _ConceptDetails(
+    final inspector = selected == null
+        ? const _EmptyConceptInspector()
+        : _ConceptDetails(
             concept: selected,
             relation: graph.relation
                 .where(
@@ -176,8 +160,71 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             onArchive: () => _toggleArchive(selected),
             onAddRelation: () => _addRelation(selected),
             onDeleteRelation: _deleteRelation,
+          );
+    final canvas = StudySurface(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          if (graph.isTruncated)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              color: studyWarningColor.withValues(alpha: 0.1),
+              child: const Text('Показан выбранный узел и два уровня соседей.'),
+            ),
+          Expanded(
+            child: InteractiveViewer(
+              constrained: false,
+              boundaryMargin: const EdgeInsets.all(120),
+              minScale: 0.1,
+              maxScale: 3,
+              child: GraphView(
+                graph: view.$1,
+                algorithm: FruchtermanReingoldAlgorithm(
+                  FruchtermanReingoldConfiguration(iterations: 250),
+                ),
+                paint: Paint()
+                  ..color = Theme.of(context).colorScheme.outline
+                  ..strokeWidth = 1.2,
+                builder: (node) {
+                  final id = node.key?.value as String;
+                  final concept = view.$2[id]!;
+                  final selected = concept.id == _selectedId;
+                  return InputChip(
+                    selected: selected,
+                    label: Text(concept.title),
+                    onPressed: () => _select(concept.id),
+                    onDeleted: selected ? () => _edit(concept) : null,
+                    deleteIcon: const Icon(Icons.edit_outlined, size: 18),
+                  );
+                },
+              ),
+            ),
           ),
-      ],
+        ],
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, _) {
+        if (MediaQuery.sizeOf(context).width < 960) {
+          return Column(
+            children: [
+              Expanded(child: canvas),
+              if (selected != null) ...[
+                const SizedBox(height: 14),
+                SizedBox(height: 250, child: inspector),
+              ],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: canvas),
+            const SizedBox(width: 16),
+            SizedBox(width: 360, child: inspector),
+          ],
+        );
+      },
     );
   }
 
@@ -520,6 +567,39 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   }
 }
 
+final class _EmptyConceptInspector extends StatelessWidget {
+  const _EmptyConceptInspector();
+
+  @override
+  Widget build(BuildContext context) {
+    return StudySurface(
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.ads_click_outlined,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              size: 34,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Выберите понятие',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Здесь появятся описание и связи.',
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 final class _ConceptDetails extends StatelessWidget {
   final ConceptV1 concept;
   final List<ConceptRelationV1> relation;
@@ -541,22 +621,23 @@ final class _ConceptDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+    final theme = Theme.of(context);
+    return StudySurface(
+      padding: EdgeInsets.zero,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Text(
                     concept.title,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: theme.textTheme.headlineSmall,
                   ),
                 ),
-                Text('${concept.blockIds.length} привязок к блокам'),
                 IconButton(
                   tooltip: 'Добавить связь',
                   onPressed: onAddRelation,
@@ -568,13 +649,56 @@ final class _ConceptDetails extends StatelessWidget {
                   icon: const Icon(Icons.edit_outlined),
                 ),
                 IconButton(
-                  tooltip: 'Архивировать понятие',
+                  tooltip: concept.isArchived
+                      ? 'Восстановить понятие'
+                      : 'Архивировать понятие',
                   onPressed: onArchive,
-                  icon: const Icon(Icons.archive_outlined),
+                  icon: Icon(
+                    concept.isArchived
+                        ? Icons.unarchive_outlined
+                        : Icons.archive_outlined,
+                  ),
                 ),
               ],
             ),
-            if (relation.isNotEmpty)
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Привязки к блокам: ${concept.blockIds.length}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+            if (concept.aliases.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Text('Псевдонимы', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  for (final alias in concept.aliases) Chip(label: Text(alias)),
+                ],
+              ),
+            ],
+            if (concept.descriptionMarkdown.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Text('Описание', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              MarkdownBody(data: concept.descriptionMarkdown),
+            ],
+            if (relation.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 16),
+              Text('Связи', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -589,6 +713,7 @@ final class _ConceptDetails extends StatelessWidget {
                     ),
                 ],
               ),
+            ],
           ],
         ),
       ),
