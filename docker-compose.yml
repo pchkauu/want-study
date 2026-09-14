@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: want_study
+      POSTGRES_USER: want_study
+      POSTGRES_PASSWORD: want_study_local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U want_study -d want_study"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  api:
+    build:
+      context: .
+      dockerfile: service/api/Dockerfile
+    environment:
+      WANT_STUDY_DATABASE_URL: postgres://want_study:want_study_local@postgres:5432/want_study?sslmode=disable
+      WANT_STUDY_GRPC_ADDRESS: 0.0.0.0:50051
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:50051:50051"
+    healthcheck:
+      test: ["CMD", "/want-study-api", "health", "--address", "127.0.0.1:50051"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres_data:

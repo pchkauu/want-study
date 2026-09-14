@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package wantstudy.v1;
+
+option go_package = "github.com/pchkauu/want-study/service/api/internal/proto/wantstudy/v1;wantstudyv1";
+
+import "wantstudy/v1/study.proto";
+
+service LessonContentService {
+  rpc GetLessonWorkspace(GetLessonWorkspaceRequest) returns (LessonWorkspace);
+  rpc CreateNoteBlock(CreateNoteBlockRequest) returns (NoteBlock);
+  rpc UpdateNoteBlock(UpdateNoteBlockRequest) returns (NoteBlock);
+  rpc DeleteNoteBlock(DeleteContentRequest) returns (DeleteContentResponse);
+  rpc CreateHomeworkTask(CreateHomeworkTaskRequest) returns (HomeworkTask);
+  rpc UpdateHomeworkTask(UpdateHomeworkTaskRequest) returns (HomeworkTask);
+  rpc DeleteHomeworkTask(DeleteContentRequest) returns (DeleteContentResponse);
+  rpc CreateCodeFile(CreateCodeFileRequest) returns (CodeFile);
+  rpc UpdateCodeFile(UpdateCodeFileRequest) returns (CodeFile);
+  rpc DeleteCodeFile(DeleteContentRequest) returns (DeleteContentResponse);
+  rpc ReorderLessonContent(ReorderLessonContentRequest) returns (LessonWorkspace);
+}
+
+enum NoteBlockType {
+  NOTE_BLOCK_TYPE_UNSPECIFIED = 0;
+  NOTE_BLOCK_TYPE_TEXT = 1;
+  NOTE_BLOCK_TYPE_DEFINITION = 2;
+  NOTE_BLOCK_TYPE_CLAIM = 3;
+  NOTE_BLOCK_TYPE_QUOTE = 4;
+  NOTE_BLOCK_TYPE_EXAMPLE = 5;
+  NOTE_BLOCK_TYPE_QUESTION = 6;
+  NOTE_BLOCK_TYPE_SUMMARY = 7;
+}
+
+enum HomeworkStatus {
+  HOMEWORK_STATUS_UNSPECIFIED = 0;
+  HOMEWORK_STATUS_TODO = 1;
+  HOMEWORK_STATUS_DONE = 2;
+}
+
+message NoteBlock {
+  string id = 1;
+  string study_id = 2;
+  string lesson_id = 3;
+  NoteBlockType type = 4;
+  string markdown = 5;
+  string source_url = 6;
+  string source_position = 7;
+  int32 position = 8;
+  int64 version = 9;
+}
+
+message HomeworkTask {
+  string id = 1;
+  string study_id = 2;
+  string lesson_id = 3;
+  string prompt_markdown = 4;
+  string solution_markdown = 5;
+  HomeworkStatus status = 6;
+  optional int64 due_at_epoch_millis = 7;
+  int32 position = 8;
+  int64 version = 9;
+}
+
+message CodeFile {
+  string id = 1;
+  string study_id = 2;
+  string lesson_id = 3;
+  optional string homework_task_id = 4;
+  string relative_path = 5;
+  string language = 6;
+  string content = 7;
+  int64 version = 8;
+}
+
+message GetLessonWorkspaceRequest {
+  string lesson_id = 1;
+}
+
+message LessonWorkspace {
+  Lesson lesson = 1;
+  repeated NoteBlock blocks = 2;
+  repeated HomeworkTask tasks = 3;
+  repeated CodeFile files = 4;
+  repeated string concept_ids = 5;
+}
+
+message CreateNoteBlockRequest {
+  NoteBlock block = 1;
+}
+
+message UpdateNoteBlockRequest {
+  NoteBlock block = 1;
+  int64 expected_version = 2;
+}
+
+message CreateHomeworkTaskRequest {
+  HomeworkTask task = 1;
+}
+
+message UpdateHomeworkTaskRequest {
+  HomeworkTask task = 1;
+  int64 expected_version = 2;
+}
+
+message CreateCodeFileRequest {
+  CodeFile file = 1;
+}
+
+message UpdateCodeFileRequest {
+  CodeFile file = 1;
+  int64 expected_version = 2;
+}
+
+message DeleteContentRequest {
+  string id = 1;
+  int64 expected_version = 2;
+  bool confirmed = 3;
+}
+
+message DeleteContentResponse {
+  string id = 1;
+}
+
+message ReorderLessonContentRequest {
+  string lesson_id = 1;
+  repeated ReorderItem blocks = 2;
+  repeated ReorderItem tasks = 3;
+}

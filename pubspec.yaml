@@ -1,0 +1,13 @@
+name: want_study_workspace
+description: Workspace for the Want Study desktop application.
+publish_to: none
+
+environment:
+  sdk: ^3.13.3
+
+workspace:
+  - app/desktop
+  - package/study
+
+dev_dependencies:
+  surf_lint_rules: ^4.0.0

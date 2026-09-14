@@ -1,0 +1,239 @@
+syntax = "proto3";
+
+package wantstudy.v1;
+
+option go_package = "github.com/pchkauu/want-study/service/api/internal/proto/wantstudy/v1;wantstudyv1";
+
+service StudyCatalogService {
+  rpc CreateStudy(CreateStudyRequest) returns (Study);
+  rpc GetStudy(GetStudyRequest) returns (Study);
+  rpc ListStudies(ListStudiesRequest) returns (ListStudiesResponse);
+  rpc UpdateStudy(UpdateStudyRequest) returns (Study);
+  rpc ArchiveStudy(ChangeArchiveRequest) returns (Study);
+  rpc RestoreStudy(ChangeArchiveRequest) returns (Study);
+
+  rpc CreateLearningSource(CreateLearningSourceRequest) returns (LearningSource);
+  rpc UpdateLearningSource(UpdateLearningSourceRequest) returns (LearningSource);
+  rpc ArchiveLearningSource(ChangeArchiveRequest) returns (LearningSource);
+  rpc RestoreLearningSource(ChangeArchiveRequest) returns (LearningSource);
+
+  rpc CreateSection(CreateSectionRequest) returns (Section);
+  rpc UpdateSection(UpdateSectionRequest) returns (Section);
+  rpc ArchiveSection(ChangeArchiveRequest) returns (Section);
+  rpc RestoreSection(ChangeArchiveRequest) returns (Section);
+
+  rpc CreateLesson(CreateLessonRequest) returns (Lesson);
+  rpc UpdateLesson(UpdateLessonRequest) returns (Lesson);
+  rpc ArchiveLesson(ChangeArchiveRequest) returns (Lesson);
+  rpc RestoreLesson(ChangeArchiveRequest) returns (Lesson);
+  rpc ChangeLessonStatus(ChangeLessonStatusRequest) returns (Lesson);
+
+  rpc GetMaterialTree(GetMaterialTreeRequest) returns (MaterialTree);
+  rpc ReorderMaterial(ReorderMaterialRequest) returns (MaterialTree);
+  rpc GetDashboard(GetDashboardRequest) returns (Dashboard);
+}
+
+enum LearningSourceType {
+  LEARNING_SOURCE_TYPE_UNSPECIFIED = 0;
+  LEARNING_SOURCE_TYPE_COURSE = 1;
+  LEARNING_SOURCE_TYPE_BOOK = 2;
+  LEARNING_SOURCE_TYPE_ARTICLE = 3;
+  LEARNING_SOURCE_TYPE_VIDEO = 4;
+  LEARNING_SOURCE_TYPE_OTHER = 5;
+}
+
+enum LessonStatus {
+  LESSON_STATUS_UNSPECIFIED = 0;
+  LESSON_STATUS_PLANNED = 1;
+  LESSON_STATUS_STUDYING = 2;
+  LESSON_STATUS_HOMEWORK = 3;
+  LESSON_STATUS_MASTERED = 4;
+}
+
+message Study {
+  string id = 1;
+  string title = 2;
+  string goal = 3;
+  string local_repository_path = 4;
+  int64 version = 5;
+  int64 content_revision = 6;
+  bool archived = 7;
+  int64 created_at_epoch_millis = 8;
+  int64 updated_at_epoch_millis = 9;
+}
+
+message LearningSource {
+  string id = 1;
+  string study_id = 2;
+  LearningSourceType type = 3;
+  string title = 4;
+  string author = 5;
+  string url = 6;
+  string export_slug = 7;
+  int32 position = 8;
+  int64 version = 9;
+  bool archived = 10;
+}
+
+message Section {
+  string id = 1;
+  string study_id = 2;
+  string source_id = 3;
+  string title = 4;
+  int32 position = 5;
+  int64 version = 6;
+  bool archived = 7;
+}
+
+message Lesson {
+  string id = 1;
+  string study_id = 2;
+  string source_id = 3;
+  optional string section_id = 4;
+  string title = 5;
+  string url = 6;
+  string source_position = 7;
+  string export_slug = 8;
+  int32 position = 9;
+  LessonStatus status = 10;
+  optional int64 started_at_epoch_millis = 11;
+  optional int64 mastered_at_epoch_millis = 12;
+  int64 version = 13;
+  bool archived = 14;
+}
+
+message CreateStudyRequest {
+  string id = 1;
+  string title = 2;
+  string goal = 3;
+  string local_repository_path = 4;
+}
+
+message GetStudyRequest {
+  string id = 1;
+}
+
+message ListStudiesRequest {
+  bool include_archived = 1;
+}
+
+message ListStudiesResponse {
+  repeated Study studies = 1;
+}
+
+message UpdateStudyRequest {
+  string id = 1;
+  string title = 2;
+  string goal = 3;
+  string local_repository_path = 4;
+  int64 expected_version = 5;
+}
+
+message ChangeArchiveRequest {
+  string id = 1;
+  int64 expected_version = 2;
+}
+
+message CreateLearningSourceRequest {
+  string id = 1;
+  string study_id = 2;
+  LearningSourceType type = 3;
+  string title = 4;
+  string author = 5;
+  string url = 6;
+  string export_slug = 7;
+  int32 position = 8;
+}
+
+message UpdateLearningSourceRequest {
+  LearningSource source = 1;
+  int64 expected_version = 2;
+}
+
+message CreateSectionRequest {
+  string id = 1;
+  string study_id = 2;
+  string source_id = 3;
+  string title = 4;
+  int32 position = 5;
+}
+
+message UpdateSectionRequest {
+  Section section = 1;
+  int64 expected_version = 2;
+}
+
+message CreateLessonRequest {
+  string id = 1;
+  string study_id = 2;
+  string source_id = 3;
+  optional string section_id = 4;
+  string title = 5;
+  string url = 6;
+  string source_position = 7;
+  string export_slug = 8;
+  int32 position = 9;
+  LessonStatus status = 10;
+}
+
+message UpdateLessonRequest {
+  Lesson lesson = 1;
+  int64 expected_version = 2;
+}
+
+message ChangeLessonStatusRequest {
+  string id = 1;
+  LessonStatus status = 2;
+  int64 expected_version = 3;
+  bool acknowledge_open_homework = 4;
+}
+
+message GetMaterialTreeRequest {
+  string study_id = 1;
+  bool include_archived = 2;
+}
+
+message SourceNode {
+  LearningSource source = 1;
+  repeated Section sections = 2;
+  repeated Lesson lessons = 3;
+}
+
+message MaterialTree {
+  Study study = 1;
+  repeated SourceNode sources = 2;
+}
+
+message ReorderItem {
+  string id = 1;
+  int32 position = 2;
+  int64 expected_version = 3;
+}
+
+message ReorderMaterialRequest {
+  string study_id = 1;
+  repeated ReorderItem sources = 2;
+  repeated ReorderItem sections = 3;
+  repeated ReorderItem lessons = 4;
+}
+
+message GetDashboardRequest {
+  string study_id = 1;
+}
+
+message Progress {
+  int32 completed = 1;
+  int32 total = 2;
+}
+
+message StatusCount {
+  LessonStatus status = 1;
+  int32 count = 2;
+}
+
+message Dashboard {
+  Progress material = 1;
+  Progress homework = 2;
+  repeated StatusCount lesson_statuses = 3;
+  int64 study_revision = 4;
+}

@@ -1,0 +1,14 @@
+DROP TABLE import_runs;
+DROP TABLE concept_relations;
+DROP TABLE block_concepts;
+DROP TABLE concept_aliases;
+DROP TABLE concepts;
+DROP TABLE code_files;
+DROP TABLE homework_tasks;
+DROP TABLE note_blocks;
+DROP TABLE lessons;
+DROP TABLE sections;
+DROP TABLE learning_sources;
+DROP TABLE studies;
+DROP FUNCTION bump_study_own_revision();
+DROP FUNCTION bump_study_revision_from_child();

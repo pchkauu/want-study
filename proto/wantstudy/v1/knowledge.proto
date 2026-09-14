@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package wantstudy.v1;
+
+option go_package = "github.com/pchkauu/want-study/service/api/internal/proto/wantstudy/v1;wantstudyv1";
+
+import "wantstudy/v1/study.proto";
+
+service KnowledgeService {
+  rpc CreateConcept(CreateConceptRequest) returns (Concept);
+  rpc UpdateConcept(UpdateConceptRequest) returns (Concept);
+  rpc ArchiveConcept(ChangeArchiveRequest) returns (Concept);
+  rpc RestoreConcept(ChangeArchiveRequest) returns (Concept);
+  rpc AddConceptAlias(ChangeConceptAliasRequest) returns (Concept);
+  rpc RemoveConceptAlias(ChangeConceptAliasRequest) returns (Concept);
+  rpc LinkBlockConcept(ChangeBlockConceptRequest) returns (Concept);
+  rpc UnlinkBlockConcept(ChangeBlockConceptRequest) returns (Concept);
+  rpc PutConceptRelation(PutConceptRelationRequest) returns (ConceptRelation);
+  rpc DeleteConceptRelation(DeleteConceptRelationRequest) returns (DeleteConceptRelationResponse);
+  rpc SearchConcepts(SearchConceptsRequest) returns (SearchConceptsResponse);
+  rpc GetConceptGraph(GetConceptGraphRequest) returns (ConceptGraph);
+}
+
+enum ConceptRelationType {
+  CONCEPT_RELATION_TYPE_UNSPECIFIED = 0;
+  CONCEPT_RELATION_TYPE_RELATED_TO = 1;
+  CONCEPT_RELATION_TYPE_PART_OF = 2;
+  CONCEPT_RELATION_TYPE_PREREQUISITE_FOR = 3;
+  CONCEPT_RELATION_TYPE_CONTRASTS_WITH = 4;
+  CONCEPT_RELATION_TYPE_APPLIES_TO = 5;
+}
+
+message Concept {
+  string id = 1;
+  string study_id = 2;
+  string title = 3;
+  string description_markdown = 4;
+  string export_slug = 5;
+  repeated string aliases = 6;
+  repeated string block_ids = 7;
+  int64 version = 8;
+  bool archived = 9;
+}
+
+message ConceptRelation {
+  string id = 1;
+  string study_id = 2;
+  string source_concept_id = 3;
+  string target_concept_id = 4;
+  ConceptRelationType type = 5;
+  int64 version = 6;
+}
+
+message CreateConceptRequest {
+  Concept concept = 1;
+}
+
+message UpdateConceptRequest {
+  Concept concept = 1;
+  int64 expected_version = 2;
+}
+
+message ChangeConceptAliasRequest {
+  string concept_id = 1;
+  string alias = 2;
+  int64 expected_version = 3;
+}
+
+message ChangeBlockConceptRequest {
+  string concept_id = 1;
+  string block_id = 2;
+  int64 expected_version = 3;
+}
+
+message PutConceptRelationRequest {
+  ConceptRelation relation = 1;
+}
+
+message DeleteConceptRelationRequest {
+  string id = 1;
+  int64 expected_version = 2;
+  bool confirmed = 3;
+}
+
+message DeleteConceptRelationResponse {
+  string id = 1;
+}
+
+message SearchConceptsRequest {
+  string study_id = 1;
+  string query = 2;
+  bool include_archived = 3;
+  int32 limit = 4;
+}
+
+message SearchConceptsResponse {
+  repeated Concept concepts = 1;
+}
+
+message GetConceptGraphRequest {
+  string study_id = 1;
+  optional string selected_concept_id = 2;
+}
+
+message ConceptGraph {
+  repeated Concept concepts = 1;
+  repeated ConceptRelation relations = 2;
+  bool truncated = 3;
+}

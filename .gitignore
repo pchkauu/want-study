@@ -1,0 +1,15 @@
+.DS_Store
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.fvm/flutter_sdk
+.idea/
+.packages
+.pub-cache/
+.tool/
+**/build/
+**/coverage/
+**/ephemeral/
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+service/api/want-study-api
