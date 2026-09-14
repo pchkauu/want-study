@@ -445,9 +445,31 @@ final class GitPublicationRepositoryV2 implements StudyPublicationRepositoryV2 {
       if (!manifest.hashByPath.containsKey(file.path) &&
           file.path != _manifestPath &&
           await File(path.joinAll([root, ...file.path.split('/')])).exists()) {
+        if (manifest.hashByPath.isEmpty &&
+            file.path == 'README.md' &&
+            await _isCleanTrackedFile(root, file.path)) {
+          continue;
+        }
         throw const PublicationErrorV1('managed_path_collision');
       }
     }
+  }
+
+  Future<bool> _isCleanTrackedFile(String root, String relativePath) async {
+    final tracked = await _runGit(root, [
+      'ls-files',
+      '--error-unmatch',
+      '--',
+      relativePath,
+    ]);
+    if (tracked.exitCode != 0) return false;
+    final changed = await _runGit(root, [
+      'diff',
+      '--quiet',
+      '--',
+      relativePath,
+    ]);
+    return changed.exitCode == 0;
   }
 
   List<String> _changedPath(_Manifest manifest, ExportSnapshotV1 snapshot) {

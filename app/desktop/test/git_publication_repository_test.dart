@@ -33,7 +33,7 @@ void main() {
     );
   });
 
-  test('previews managed files and detects an unchanged snapshot', () async {
+  test('adopts a clean tracked README and preserves local drafts', () async {
     final temporary = await Directory.systemTemp.createTemp(
       'want-study-git-test-',
     );
@@ -48,8 +48,10 @@ void main() {
       'user.email',
       'want-study@example.invalid',
     ]);
+    const initialReadme = '# Existing study\n';
+    await File('${repository.path}/README.md').writeAsString(initialReadme);
     await File('${repository.path}/.gitignore').writeAsString('local\n');
-    await _git(repository.path, ['add', '.gitignore']);
+    await _git(repository.path, ['add', '.gitignore', 'README.md']);
     await _git(repository.path, [
       'commit',
       '-m',
@@ -113,8 +115,22 @@ void main() {
       errorReporter,
     );
 
+    await File('${repository.path}/README.md').writeAsString('# Local draft\n');
+    await expectLater(
+      publication.preview(study: study, snapshot: snapshot),
+      throwsA(
+        isA<PublicationErrorV1>().having(
+          (error) => error.reason,
+          'reason',
+          'managed_path_collision',
+        ),
+      ),
+    );
+    await File('${repository.path}/README.md').writeAsString(initialReadme);
+
     final preview = await publication.preview(study: study, snapshot: snapshot);
     expect(preview.changedPath, ['.want-study/manifest.json', 'README.md']);
+    expect(preview.diff, contains('-# Existing study'));
     expect(preview.diff, contains('# Study'));
     expect(preview.diff, isNot(contains(temporary.path)));
 
