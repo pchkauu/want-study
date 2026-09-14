@@ -20,11 +20,12 @@ final class StudyFeatureFacadeV2 {
     required this.publicationController,
   });
 
-  Widget buildRoot() => StudyRootPageV1(
+  Widget buildRoot({VoidCallback? onOpenDiagnostics}) => StudyRootPageV1(
     config: config,
     catalogController: catalogController,
     lessonEditorController: lessonEditorController,
     conceptController: conceptController,
     publicationController: publicationController,
+    onOpenDiagnostics: onOpenDiagnostics,
   );
 }

@@ -13,6 +13,7 @@ final class StudyRootPageV1 extends StatefulWidget {
   final LessonEditorControllerV2 lessonEditorController;
   final ConceptControllerV1 conceptController;
   final PublicationControllerV2 publicationController;
+  final VoidCallback? onOpenDiagnostics;
 
   const StudyRootPageV1({
     required this.config,
@@ -20,6 +21,7 @@ final class StudyRootPageV1 extends StatefulWidget {
     required this.lessonEditorController,
     required this.conceptController,
     required this.publicationController,
+    this.onOpenDiagnostics,
     super.key,
   });
 
@@ -79,6 +81,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                           width: 76,
                           child: _NavigationDock(
                             selectedIndex: _selectedPage,
+                            onOpenDiagnostics: widget.onOpenDiagnostics,
                             onSelected: (value) {
                               setState(() => _selectedPage = value);
                             },
@@ -285,6 +288,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
             width: 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 TextField(
                   controller: title,
@@ -298,7 +303,6 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                   maxLines: 3,
                   decoration: const InputDecoration(labelText: 'Цель'),
                 ),
-                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -386,6 +390,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 TextField(
                   controller: title,
@@ -551,6 +557,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 TextField(
                   controller: title,
@@ -633,6 +641,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
         builder: (context) => LessonEditorPageV1(
           study: _catalogController.state.selectedStudy!,
           lesson: lesson,
+          catalogController: _catalogController,
           controller: widget.lessonEditorController,
         ),
       ),
@@ -665,10 +674,12 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
 final class _NavigationDock extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final VoidCallback? onOpenDiagnostics;
 
   const _NavigationDock({
     required this.selectedIndex,
     required this.onSelected,
+    required this.onOpenDiagnostics,
   });
 
   @override
@@ -721,7 +732,16 @@ final class _NavigationDock extends StatelessWidget {
             if (index != destination.length - 1) const SizedBox(height: 10),
           ],
           const Spacer(),
-          const SizedBox(height: 58),
+          if (onOpenDiagnostics != null)
+            _DockButton(
+              selected: false,
+              icon: Icons.monitor_heart_outlined,
+              label: 'Локальные логи',
+              onPressed: onOpenDiagnostics!,
+            )
+          else
+            const SizedBox(height: 52),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -838,57 +858,14 @@ final class _StudyHeader extends StatelessWidget {
           ),
           const SizedBox(width: 18),
           Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: selectedStudyId,
-                        isExpanded: true,
-                        isDense: true,
-                        borderRadius: BorderRadius.circular(12),
-                        style: theme.textTheme.titleMedium,
-                        icon: const Icon(Icons.unfold_more_rounded, size: 18),
-                        items: [
-                          for (final item in study)
-                            DropdownMenuItem(
-                              value: item.id,
-                              child: Text(
-                                item.isArchived
-                                    ? '${item.title} (архив)'
-                                    : item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) onSelected(value);
-                        },
-                      ),
-                    ),
-                    if (selected?.goal.isNotEmpty ?? false) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        selected!.goal,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ],
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: _StudySelector(
+                  study: study,
+                  selected: selected,
+                  onSelected: onSelected,
                 ),
               ),
             ),
@@ -953,6 +930,155 @@ final class _StudyHeader extends StatelessWidget {
               icon: const Icon(Icons.more_horiz_rounded),
             ),
         ],
+      ),
+    );
+  }
+}
+
+final class _StudySelector extends StatelessWidget {
+  final List<StudyV1> study;
+  final StudyV1? selected;
+  final ValueChanged<String> onSelected;
+
+  const _StudySelector({
+    required this.study,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return MenuAnchor(
+      alignmentOffset: const Offset(0, 8),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(16),
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
+        maximumSize: const WidgetStatePropertyAll(Size(460, 360)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
+        ),
+      ),
+      menuChildren: [
+        for (var index = 0; index < study.length; index++)
+          MenuItemButton(
+            onPressed: () => onSelected(study[index].id),
+            child: SizedBox(
+              key: index == 0 ? const ValueKey('study-selector-menu') : null,
+              width: 400,
+              child: Row(
+                children: [
+                  Icon(
+                    study[index].id == selected?.id
+                        ? Icons.check_rounded
+                        : Icons.school_outlined,
+                    size: 18,
+                    color: study[index].id == selected?.id
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          study[index].title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: study[index].isArchived
+                                ? scheme.onSurfaceVariant
+                                : scheme.onSurface,
+                          ),
+                        ),
+                        if (study[index].goal.isNotEmpty)
+                          Text(
+                            study[index].goal,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (study[index].isArchived) ...[
+                    const SizedBox(width: 12),
+                    Text('Архив', style: theme.textTheme.labelSmall),
+                  ],
+                ],
+              ),
+            ),
+          ),
+      ],
+      builder: (context, controller, _) => Tooltip(
+        message: 'Выбрать обучение',
+        child: Semantics(
+          button: true,
+          label: 'Выбрать обучение',
+          child: Material(
+            color: scheme.surface.withValues(alpha: 0.9),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: scheme.outlineVariant),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const ValueKey('study-selector'),
+              onTap: controller.isOpen ? controller.close : controller.open,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.school_outlined,
+                      size: 20,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selected?.title ?? 'Выберите обучение',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          if (selected?.goal.isNotEmpty ?? false)
+                            Text(
+                              selected!.goal,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(
+                      Icons.unfold_more_rounded,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

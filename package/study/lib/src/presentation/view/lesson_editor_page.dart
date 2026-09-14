@@ -19,11 +19,13 @@ part 'lesson_editor_note.dart';
 final class LessonEditorPageV1 extends StatefulWidget {
   final StudyV1 study;
   final LessonV1 lesson;
+  final CatalogControllerV2 catalogController;
   final LessonEditorControllerV2 controller;
 
   const LessonEditorPageV1({
     required this.study,
     required this.lesson,
+    required this.catalogController,
     required this.controller,
     super.key,
   });
@@ -95,18 +97,24 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                       }.contains(state.saveState)
                   ? SaveStateV1.dirty
                   : state.saveState;
-              return PopScope(
-                canPop: !unsafeToLeave,
-                onPopInvokedWithResult: (didPop, _) {
-                  if (!didPop) unawaited(_requestLeave(state));
+              return BlocBuilder<CatalogControllerV2, CatalogStateV2>(
+                bloc: widget.catalogController,
+                builder: (context, catalogState) {
+                  final lesson = _currentLesson(catalogState) ?? widget.lesson;
+                  return PopScope(
+                    canPop: !unsafeToLeave,
+                    onPopInvokedWithResult: (didPop, _) {
+                      if (!didPop) unawaited(_requestLeave(state));
+                    },
+                    child: StudyBackdrop(
+                      child: Scaffold(
+                        backgroundColor: Colors.transparent,
+                        appBar: _buildAppBar(state, effectiveSaveState, lesson),
+                        body: _body(state),
+                      ),
+                    ),
+                  );
                 },
-                child: StudyBackdrop(
-                  child: Scaffold(
-                    backgroundColor: Colors.transparent,
-                    appBar: _buildAppBar(state, effectiveSaveState),
-                    body: _body(state),
-                  ),
-                ),
               );
             },
           ),
@@ -116,6 +124,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
   PreferredSizeWidget _buildAppBar(
     LessonEditorStateV2 state,
     SaveStateV1 saveState,
+    LessonV1 lesson,
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 960;
@@ -162,14 +171,14 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                if (widget.lesson.sourcePosition.isNotEmpty) ...[
+                if (lesson.sourcePosition.isNotEmpty) ...[
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Icon(Icons.chevron_right_rounded, size: 14),
                   ),
                   Flexible(
                     child: Text(
-                      widget.lesson.sourcePosition,
+                      lesson.sourcePosition,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -180,7 +189,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
             ),
             const SizedBox(height: 2),
             Text(
-              widget.lesson.title,
+              lesson.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleLarge,
@@ -189,15 +198,19 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
         ),
       ),
       actions: [
-        if (width >= 1120) _LessonStatusBadge(status: widget.lesson.status),
-        if (widget.lesson.url.isNotEmpty)
+        _LessonStatusControl(
+          lesson: lesson,
+          compact: width < 1120,
+          onSelected: _changeLessonStatus,
+        ),
+        if (lesson.url.isNotEmpty)
           IconButton(
-            tooltip: _httpUri(widget.lesson.url) == null
+            tooltip: _httpUri(lesson.url) == null
                 ? 'Некорректная ссылка источника'
                 : 'Открыть источник урока',
-            onPressed: _httpUri(widget.lesson.url) == null
+            onPressed: _httpUri(lesson.url) == null
                 ? null
-                : () => _openExternalUrl(widget.lesson.url),
+                : () => _openExternalUrl(lesson.url),
             icon: const Icon(Icons.open_in_new_rounded),
           ),
         _SaveBadge(state: saveState, compact: compact),
@@ -242,6 +255,20 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  LessonV1? _currentLesson(CatalogStateV2 state) => state.tree?.source
+      .expand((source) => source.lesson)
+      .where((lesson) => lesson.id == widget.lesson.id)
+      .firstOrNull;
+
+  void _changeLessonStatus(LessonV1 lesson, LessonStatusV1 status) {
+    if (lesson.status == status) return;
+    widget.catalogController.add(
+      CatalogLessonStatusChangedV2(
+        LessonStatusChangeV1(lesson: lesson, status: status),
       ),
     );
   }
@@ -509,6 +536,8 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
               width: 520,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 16,
                 children: [
                   TextField(
                     controller: url,
@@ -521,7 +550,6 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                           : null,
                     ),
                   ),
-                  const SizedBox(height: 14),
                   TextField(
                     controller: position,
                     decoration: const InputDecoration(
@@ -574,6 +602,8 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
             width: 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 TextField(
                   controller: relativePath,
@@ -583,12 +613,10 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                     hintText: 'src/main.c',
                   ),
                 ),
-                const SizedBox(height: 14),
                 TextField(
                   controller: language,
                   decoration: const InputDecoration(labelText: 'Язык'),
                 ),
-                const SizedBox(height: 14),
                 DropdownButtonFormField<String?>(
                   initialValue: homeworkTaskId,
                   decoration: const InputDecoration(
@@ -605,7 +633,6 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                   onChanged: (value) =>
                       setDialogState(() => homeworkTaskId = value),
                 ),
-                const SizedBox(height: 14),
                 TextField(
                   controller: content,
                   minLines: 8,
@@ -842,33 +869,64 @@ final class _SaveBadge extends StatelessWidget {
   }
 }
 
-final class _LessonStatusBadge extends StatelessWidget {
-  final LessonStatusV1 status;
+final class _LessonStatusControl extends StatelessWidget {
+  final LessonV1 lesson;
+  final bool compact;
+  final void Function(LessonV1 lesson, LessonStatusV1 status) onSelected;
 
-  const _LessonStatusBadge({required this.status});
+  const _LessonStatusControl({
+    required this.lesson,
+    required this.compact,
+    required this.onSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final (label, color) = switch (status) {
-      LessonStatusV1.planned => ('Запланирован', scheme.onSurfaceVariant),
-      LessonStatusV1.studying => ('Изучается', scheme.primary),
-      LessonStatusV1.homework => ('Домашняя работа', studyWarningColor),
-      LessonStatusV1.mastered => ('Освоен', scheme.tertiary),
-    };
+    final color = lessonStatusColor(context, lesson.status);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.11),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium
-              ?.copyWith(color: color),
-        ),
+      child: PopupMenuButton<LessonStatusV1>(
+        tooltip: 'Изменить статус урока',
+        position: PopupMenuPosition.under,
+        onSelected: (status) => onSelected(lesson, status),
+        itemBuilder: (context) => [
+          for (final status in LessonStatusV1.values)
+            PopupMenuItem(
+              value: status,
+              child: Row(
+                children: [
+                  Icon(
+                    status == lesson.status
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    size: 17,
+                    color: lessonStatusColor(context, status),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(lessonStatusLabel(status)),
+                ],
+              ),
+            ),
+        ],
+        child: compact
+            ? Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.11),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
+                ),
+                child: Icon(Icons.flag_outlined, size: 19, color: color),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LessonStatusBadge(status: lesson.status),
+                  const SizedBox(width: 2),
+                  Icon(Icons.expand_more_rounded, size: 18, color: color),
+                ],
+              ),
       ),
     );
   }

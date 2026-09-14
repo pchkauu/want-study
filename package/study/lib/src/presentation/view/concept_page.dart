@@ -87,32 +87,38 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          StudySectionHeader(
-            title: 'Понятия',
-            description: 'Связи, псевдонимы и упоминания в конспектах.',
-            trailing: FilledButton.icon(
-              onPressed: _create,
-              icon: const Icon(Icons.add),
-              label: const Text('Понятие'),
-            ),
-          ),
-          const SizedBox(height: 18),
-          SearchBar(
-            controller: _search,
-            hintText: 'Поиск понятия или псевдонима',
-            leading: const Icon(Icons.search),
-            elevation: const WidgetStatePropertyAll(0),
-            backgroundColor: WidgetStatePropertyAll(
-              Theme.of(context).colorScheme.surfaceContainerHigh,
-            ),
-            side: WidgetStatePropertyAll(
-              BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-            ),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            onChanged: (value) =>
-                widget.controller.add(ConceptSearchChangedV1(value)),
+          Row(
+            children: [
+              Expanded(
+                child: SearchBar(
+                  controller: _search,
+                  hintText: 'Поиск понятия или псевдонима',
+                  leading: const Icon(Icons.search),
+                  elevation: const WidgetStatePropertyAll(0),
+                  backgroundColor: WidgetStatePropertyAll(
+                    Theme.of(context).colorScheme.surfaceContainerHigh,
+                  ),
+                  side: WidgetStatePropertyAll(
+                    BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  shape: WidgetStatePropertyAll(
+                    RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onChanged: (value) =>
+                      widget.controller.add(ConceptSearchChangedV1(value)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: _create,
+                icon: const Icon(Icons.add),
+                label: const Text('Понятие'),
+              ),
+            ],
           ),
           if (state.searchResult.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -174,23 +180,26 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     final selected =
         state.selectedConcept ??
         (graph.concept.length == 1 ? graph.concept.single : null);
-    final inspector = selected == null
-        ? const _EmptyConceptInspector()
-        : _ConceptDetails(
-            concept: selected,
-            relation: graph.relation
-                .where(
-                  (relation) =>
-                      relation.sourceConceptId == selected.id ||
-                      relation.targetConceptId == selected.id,
-                )
-                .toList(),
-            conceptById: view.$2,
-            onEdit: () => _edit(selected),
-            onArchive: () => _toggleArchive(selected),
-            onAddRelation: () => _addRelation(selected),
-            onDeleteRelation: _deleteRelation,
-          );
+    final inspector = KeyedSubtree(
+      key: const ValueKey('concept-inspector'),
+      child: selected == null
+          ? const _EmptyConceptInspector()
+          : _ConceptDetails(
+              concept: selected,
+              relation: graph.relation
+                  .where(
+                    (relation) =>
+                        relation.sourceConceptId == selected.id ||
+                        relation.targetConceptId == selected.id,
+                  )
+                  .toList(),
+              conceptById: view.$2,
+              onEdit: () => _edit(selected),
+              onArchive: () => _toggleArchive(selected),
+              onAddRelation: () => _addRelation(selected),
+              onDeleteRelation: _deleteRelation,
+            ),
+    );
     final graphContent = graph.concept.length == 1
         ? InteractiveViewer(
             minScale: 0.1,
@@ -239,24 +248,20 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (MediaQuery.sizeOf(context).width < 960) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                SizedBox(height: constraints.maxHeight, child: canvas),
-                if (selected != null) ...[
-                  const SizedBox(height: 14),
-                  SizedBox(height: 250, child: inspector),
-                ],
-              ],
-            ),
+        if (constraints.maxWidth < 840) {
+          return Column(
+            children: [
+              Expanded(flex: 3, child: canvas),
+              const SizedBox(height: 14),
+              Expanded(flex: 2, child: inspector),
+            ],
           );
         }
         return Row(
           children: [
             Expanded(child: canvas),
             const SizedBox(width: 16),
-            SizedBox(width: 360, child: inspector),
+            SizedBox(width: 320, child: inspector),
           ],
         );
       },
@@ -461,6 +466,8 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: targetId,
@@ -546,6 +553,8 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             width: 560,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
               children: [
                 TextField(
                   controller: title,

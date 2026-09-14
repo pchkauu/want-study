@@ -1084,7 +1084,16 @@ final class _CommandPalette extends StatefulWidget {
 
 final class _CommandPaletteState extends State<_CommandPalette> {
   final _query = TextEditingController();
+  final _queryFocus = FocusNode();
   var _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _queryFocus.requestFocus();
+    });
+  }
 
   List<_CommandItem> get _filtered {
     final query = _query.text.trim().toLowerCase();
@@ -1100,6 +1109,7 @@ final class _CommandPaletteState extends State<_CommandPalette> {
   @override
   void dispose() {
     _query.dispose();
+    _queryFocus.dispose();
     super.dispose();
   }
 
@@ -1134,84 +1144,78 @@ final class _CommandPaletteState extends State<_CommandPalette> {
             const SingleActivator(LogicalKeyboardKey.escape): () =>
                 Navigator.pop(context),
           },
-          child: Focus(
-            autofocus: true,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-                  child: TextField(
-                    controller: _query,
-                    autofocus: true,
-                    onChanged: (_) => setState(() => _selectedIndex = 0),
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search_rounded),
-                      hintText: 'Найдите действие…',
-                    ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                child: TextField(
+                  controller: _query,
+                  focusNode: _queryFocus,
+                  onChanged: (_) => setState(() => _selectedIndex = 0),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search_rounded),
+                    hintText: 'Найдите действие…',
                   ),
                 ),
-                const Divider(),
-                Flexible(
-                  child: items.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Text(
-                            'Ничего не найдено',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 14),
-                          shrinkWrap: true,
-                          itemCount: items.length,
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final firstInGroup =
-                                index == 0 ||
-                                items[index - 1].group != item.group;
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (firstInGroup)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      12,
-                                      12,
-                                      12,
-                                      6,
-                                    ),
-                                    child: Text(
-                                      item.group,
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: theme
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
+              ),
+              const Divider(),
+              Flexible(
+                child: items.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Text(
+                          'Ничего не найдено',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 14),
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final firstInGroup =
+                              index == 0 ||
+                              items[index - 1].group != item.group;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (firstInGroup)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    12,
+                                    12,
+                                    6,
                                   ),
-                                Material(
-                                  color: index == _selectedIndex
-                                      ? theme.colorScheme.primary.withValues(
-                                          alpha: 0.16,
-                                        )
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: ListTile(
-                                    dense: true,
-                                    leading: Icon(item.icon, size: 19),
-                                    title: Text(item.label),
-                                    onTap: () => Navigator.pop(context, item),
+                                  child: Text(
+                                    item.group,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ),
-                              ],
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
+                              Material(
+                                color: index == _selectedIndex
+                                    ? theme.colorScheme.primary.withValues(
+                                        alpha: 0.16,
+                                      )
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                                child: ListTile(
+                                  dense: true,
+                                  leading: Icon(item.icon, size: 19),
+                                  title: Text(item.label),
+                                  onTap: () => Navigator.pop(context, item),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
         ),
       ),

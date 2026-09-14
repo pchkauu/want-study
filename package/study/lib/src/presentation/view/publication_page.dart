@@ -79,12 +79,6 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const StudySectionHeader(
-                    title: 'Публикация',
-                    description:
-                        'Проверьте Markdown diff перед записью и push.',
-                  ),
-                  const SizedBox(height: 20),
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, _) {

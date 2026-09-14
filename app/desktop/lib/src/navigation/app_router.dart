@@ -137,15 +137,9 @@ final class _StudyScreenState extends State<StudyScreen> {
             ),
           );
         }
-        return Stack(
-          children: [
-            Positioned.fill(child: getIt<StudyFeatureFacadeV2>().buildRoot()),
-            Positioned(
-              left: 26,
-              bottom: 24,
-              child: _diagnosticsButton(context),
-            ),
-          ],
+        return getIt<StudyFeatureFacadeV2>().buildRoot(
+          onOpenDiagnostics: () =>
+              context.router.push(const DiagnosticsRoute()),
         );
       },
     );

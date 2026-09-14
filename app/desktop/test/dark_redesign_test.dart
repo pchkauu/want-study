@@ -117,8 +117,19 @@ void main() {
   ) async {
     final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
+    when(
+      () =>
+          repositories.study.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) async => [_study, _longArchivedStudy]);
+    var diagnosticsOpened = false;
     await _setSurface(tester, const Size(1440, 900));
-    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpWidget(
+      _testApp(
+        repositories.facade.buildRoot(
+          onOpenDiagnostics: () => diagnosticsOpened = true,
+        ),
+      ),
+    );
     await _pumpCatalogState(tester, repositories, 'ready');
 
     expect(
@@ -127,6 +138,8 @@ void main() {
     );
     expect(find.byType(NavigationRail), findsNothing);
     expect(find.byTooltip('Обзор'), findsOneWidget);
+    expect(find.byKey(const ValueKey('study-selector')), findsOneWidget);
+    expect(find.byTooltip('Локальные логи'), findsOneWidget);
     expect(find.byKey(const ValueKey('want-study-logo')), findsOneWidget);
     await _precacheLogo(tester);
     expect(find.text('Материал'), findsWidgets);
@@ -161,6 +174,21 @@ void main() {
       find.byKey(const ValueKey('golden-root')),
       matchesGoldenFile('golden/overview_dark.png'),
     );
+
+    await tester.tap(find.byTooltip('Локальные логи'));
+    expect(diagnosticsOpened, isTrue);
+    await tester.tap(find.byKey(const ValueKey('study-selector')));
+    await tester.pumpAndSettle();
+    final menu = tester.getRect(
+      find.byKey(const ValueKey('study-selector-menu')),
+    );
+    expect(menu.width, lessThanOrEqualTo(480));
+    await expectLater(
+      find.byType(Overlay).first,
+      matchesGoldenFile('golden/study_selector_dark.png'),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     tester.view.physicalSize = const Size(1024, 720);
     await tester.pumpAndSettle();
@@ -216,6 +244,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Урок'));
     await tester.pumpAndSettle();
+    final lessonTitleField = _textFieldWithLabel('Название');
+    final lessonPositionField = _textFieldWithLabel('Позиция в источнике');
+    expect(
+      tester.getTopLeft(lessonPositionField).dy -
+          tester.getBottomLeft(lessonTitleField).dy,
+      greaterThanOrEqualTo(16),
+    );
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
@@ -482,6 +517,7 @@ void main() {
           widget is TextField &&
           widget.decoration?.hintText == 'Найдите действие…',
     );
+    expect(tester.widget<TextField>(commandSearch).focusNode?.hasFocus, isTrue);
     await tester.enterText(commandSearch, 'Источник блока');
     await tester.pumpAndSettle();
     expect(find.text('Блок'), findsOneWidget);
@@ -742,8 +778,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.menu_book_outlined));
     await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Изучается'));
+    await tester.tap(find.byTooltip('Изменить статус урока'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Освоен').last);
     await tester.pumpAndSettle();
@@ -779,9 +817,14 @@ void main() {
     await tester.tap(find.byIcon(Icons.hub_outlined));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    expect(find.text('Понятия'), findsOneWidget);
     final canvas = tester.getRect(
       find.byKey(const ValueKey('concept-graph-canvas')),
     );
+    final inspector = tester.getRect(
+      find.byKey(const ValueKey('concept-inspector')),
+    );
+    expect(canvas.width, greaterThan(inspector.width));
     for (final id in const ['concept-raii', 'concept-exception']) {
       final node = tester.getRect(find.byKey(ValueKey(id)));
       expect(
@@ -802,6 +845,13 @@ void main() {
     );
     tester.view.physicalSize = const Size(900, 720);
     await tester.pumpAndSettle();
+    final compactCanvas = tester.getRect(
+      find.byKey(const ValueKey('concept-graph-canvas')),
+    );
+    final compactInspector = tester.getRect(
+      find.byKey(const ValueKey('concept-inspector')),
+    );
+    expect(compactInspector.top, greaterThan(compactCanvas.top));
     final addRelation = find.byTooltip('Добавить связь');
     await tester.ensureVisible(addRelation);
     await tester.tap(addRelation);
@@ -851,6 +901,16 @@ void main() {
     final title = find.byWidgetPredicate(
       (widget) =>
           widget is TextField && widget.decoration?.labelText == 'Название',
+    );
+    final description = _textFieldWithLabel('Описание');
+    final aliases = _textFieldWithLabel('Псевдонимы через запятую');
+    expect(
+      tester.getTopLeft(description).dy - tester.getBottomLeft(title).dy,
+      greaterThanOrEqualTo(16),
+    );
+    expect(
+      tester.getTopLeft(aliases).dy - tester.getBottomLeft(description).dy,
+      greaterThanOrEqualTo(16),
     );
     await tester.enterText(title, 'Единственное понятие');
     await tester.tap(find.text('Сохранить'));
@@ -981,6 +1041,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.publish_outlined));
     await tester.pumpAndSettle();
+    expect(find.text('Публикация'), findsOneWidget);
     expect(find.text('Готово к проверке'), findsOneWidget);
     await tester.tap(find.text('Построить предпросмотр'));
     await tester.pump();
@@ -1121,6 +1182,10 @@ Future<void> _precacheLogo(WidgetTester tester) async {
   await tester.pump();
 }
 
+Finder _textFieldWithLabel(String label) => find.byWidgetPredicate(
+  (widget) => widget is TextField && widget.decoration?.labelText == label,
+);
+
 Future<void> _pumpCatalogState(
   WidgetTester tester,
   _Repositories repositories,
@@ -1173,6 +1238,13 @@ final _study = StudyV1(
   title: 'C/C++',
   goal: 'Уверенно проектировать и разбирать современные программы на C++.',
   contentRevision: 7,
+);
+
+final _longArchivedStudy = StudyV1(
+  id: 'study-archived',
+  title: 'Очень длинное название архивного обучения для проверки компактного выбора проекта',
+  goal: 'Очень длинная цель, которая должна аккуратно сокращаться внутри ограниченного меню.',
+  isArchived: true,
 );
 
 final _source = LearningSourceV1(
