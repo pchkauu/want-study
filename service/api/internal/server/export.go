@@ -357,28 +357,28 @@ func renderRoot(snapshot *exportSnapshot) string {
 	var output strings.Builder
 	fmt.Fprintf(&output, "# 📚 %s\n\n", markdownInline(snapshot.study.Title))
 	if strings.TrimSpace(snapshot.study.Goal) != "" {
-		output.WriteString("> [!NOTE]\n> **Цель обучения**\n>\n")
+		output.WriteString("> [!NOTE]\n> **Learning goal**\n>\n")
 		writeBlockquote(&output, snapshot.study.Goal)
 		output.WriteByte('\n')
 	}
-	output.WriteString("## 📈 Прогресс\n\n")
-	output.WriteString("| Направление | Выполнено | Результат |\n")
+	output.WriteString("## 📈 Progress\n\n")
+	output.WriteString("| Area | Completed | Result |\n")
 	output.WriteString("| :-- | --: | --: |\n")
-	fmt.Fprintf(&output, "| 📖 Материал | %d из %d | **%d%%** |\n", snapshot.material.completed, snapshot.material.total, percent(snapshot.material))
-	fmt.Fprintf(&output, "| ✅ Домашняя работа | %d из %d | **%d%%** |\n\n", snapshot.homework.completed, snapshot.homework.total, percent(snapshot.homework))
+	fmt.Fprintf(&output, "| 📖 Lessons | %d of %d | **%d%%** |\n", snapshot.material.completed, snapshot.material.total, percent(snapshot.material))
+	fmt.Fprintf(&output, "| ✅ Homework | %d of %d | **%d%%** |\n\n", snapshot.homework.completed, snapshot.homework.total, percent(snapshot.homework))
 
 	status := lessonStatusCounts(snapshot.sources)
-	output.WriteString("## 🧭 Статус занятий\n\n")
-	output.WriteString("| 🗓️ Запланировано | 📖 Изучается | 🧩 Домашняя работа | ✅ Освоено |\n")
+	output.WriteString("## 🧭 Lesson status\n\n")
+	output.WriteString("| 🗓️ Planned | 📖 Studying | 🧩 Homework | ✅ Mastered |\n")
 	output.WriteString("| --: | --: | --: | --: |\n")
 	fmt.Fprintf(&output, "| %d | %d | %d | %d |\n\n", status.planned, status.studying, status.homework, status.mastered)
 
-	output.WriteString("## 🎓 Источники\n\n")
+	output.WriteString("## 🎓 Sources\n\n")
 	if len(snapshot.sources) == 0 {
-		output.WriteString("> Источники пока не добавлены.\n\n")
+		output.WriteString("> No sources yet.\n\n")
 	}
 	if len(snapshot.sources) > 0 {
-		output.WriteString("| Источник | Формат | Уроки | Освоено |\n")
+		output.WriteString("| Source | Type | Lessons | Mastered |\n")
 		output.WriteString("| :-- | :-- | --: | --: |\n")
 	}
 	for _, node := range snapshot.sources {
@@ -390,7 +390,7 @@ func renderRoot(snapshot *exportSnapshot) string {
 		}
 		fmt.Fprintf(&output, "| [%s](source/%s/README.md) | %s | %d | %d |\n", markdownInline(node.Source.Title), node.Source.ExportSlug, sourceTypeLabel(node.Source.Type), len(node.Lessons), mastered)
 	}
-	output.WriteString("\n[🧠 Открыть карту понятий](concept/README.md)\n")
+	output.WriteString("\n[🧠 Open concept map](concept/README.md)\n")
 	return output.String()
 }
 
@@ -429,17 +429,17 @@ func percent(value progressCount) int {
 
 func renderSource(node *wantstudyv1.SourceNode) string {
 	var output strings.Builder
-	output.WriteString("[← К обучению](../../README.md)\n\n")
+	output.WriteString("[← Back to study](../../README.md)\n\n")
 	fmt.Fprintf(&output, "# 🎓 %s\n\n", markdownInline(node.Source.Title))
 	metadata := []string{sourceTypeLabel(node.Source.Type)}
 	if strings.TrimSpace(node.Source.Author) != "" {
-		metadata = append(metadata, "**Автор:** "+markdownInline(node.Source.Author))
+		metadata = append(metadata, "**Author:** "+markdownInline(node.Source.Author))
 	}
 	if node.Source.Url != "" {
-		if link, ok := externalLink("Открыть источник ↗", node.Source.Url); ok {
+		if link, ok := externalLink("Open source ↗", node.Source.Url); ok {
 			metadata = append(metadata, link)
 		} else {
-			metadata = append(metadata, "**Адрес:** "+markdownCode(node.Source.Url))
+			metadata = append(metadata, "**Address:** "+markdownCode(node.Source.Url))
 		}
 	}
 	fmt.Fprintf(&output, "> %s\n\n", strings.Join(metadata, " · "))
@@ -450,9 +450,9 @@ func renderSource(node *wantstudyv1.SourceNode) string {
 			mastered++
 		}
 	}
-	output.WriteString("## 📊 Прогресс\n\n")
-	fmt.Fprintf(&output, "**Освоено уроков:** %d / %d · **Прогресс:** %d%%\n\n", mastered, len(node.Lessons), percent(progressCount{completed: mastered, total: len(node.Lessons)}))
-	output.WriteString("## 📑 Программа\n\n")
+	output.WriteString("## 📊 Progress\n\n")
+	fmt.Fprintf(&output, "**Lessons mastered:** %d / %d · **Progress:** %d%%\n\n", mastered, len(node.Lessons), percent(progressCount{completed: mastered, total: len(node.Lessons)}))
+	output.WriteString("## 📑 Curriculum\n\n")
 	lessonsBySection := make(map[string][]*wantstudyv1.Lesson)
 	for _, lesson := range node.Lessons {
 		lessonsBySection[lesson.GetSectionId()] = append(lessonsBySection[lesson.GetSectionId()], lesson)
@@ -465,17 +465,17 @@ func renderSource(node *wantstudyv1.SourceNode) string {
 		renderLessonList(&output, lessonsBySection[section.Id])
 	}
 	if lessons := lessonsBySection[""]; len(lessons) > 0 {
-		output.WriteString("### Без раздела\n\n")
+		output.WriteString("### Uncategorized\n\n")
 		renderLessonList(&output, lessons)
 	}
 	if len(node.Lessons) == 0 {
-		output.WriteString("> Уроки пока не добавлены.\n")
+		output.WriteString("> No lessons yet.\n")
 	}
 	return output.String()
 }
 
 func renderLessonList(output *strings.Builder, lessons []*wantstudyv1.Lesson) {
-	output.WriteString("| Позиция | Урок | Статус |\n")
+	output.WriteString("| Position | Lesson | Status |\n")
 	output.WriteString("| :-- | :-- | :-- |\n")
 	for _, lesson := range lessons {
 		position := lesson.SourcePosition
@@ -490,27 +490,27 @@ func renderLessonList(output *strings.Builder, lessons []*wantstudyv1.Lesson) {
 func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.LearningSource, conceptByID map[string]*wantstudyv1.Concept) string {
 	lesson := workspace.Lesson
 	var output strings.Builder
-	fmt.Fprintf(&output, "[← %s](../../README.md) · [К обучению](../../../../README.md)\n\n", markdownInline(source.Title))
+	fmt.Fprintf(&output, "[← %s](../../README.md) · [Back to study](../../../../README.md)\n\n", markdownInline(source.Title))
 	fmt.Fprintf(&output, "# 📝 %s\n\n", markdownInline(lesson.Title))
 	metadata := []string{lessonStatusDisplay(lesson.Status)}
 	if lesson.SourcePosition != "" {
-		metadata = append(metadata, "**Позиция:** "+markdownInline(lesson.SourcePosition))
+		metadata = append(metadata, "**Position:** "+markdownInline(lesson.SourcePosition))
 	}
 	if lesson.StartedAtEpochMillis != nil {
-		metadata = append(metadata, "**Начато:** "+formatDate(lesson.GetStartedAtEpochMillis()))
+		metadata = append(metadata, "**Started:** "+formatDate(lesson.GetStartedAtEpochMillis()))
 	}
 	if lesson.MasteredAtEpochMillis != nil {
-		metadata = append(metadata, "**Освоено:** "+formatDate(lesson.GetMasteredAtEpochMillis()))
+		metadata = append(metadata, "**Mastered:** "+formatDate(lesson.GetMasteredAtEpochMillis()))
 	}
 	if lesson.Url != "" {
-		if link, ok := externalLink("Открыть занятие ↗", lesson.Url); ok {
+		if link, ok := externalLink("Open lesson ↗", lesson.Url); ok {
 			metadata = append(metadata, link)
 		} else {
-			metadata = append(metadata, "**Адрес:** "+markdownCode(lesson.Url))
+			metadata = append(metadata, "**Address:** "+markdownCode(lesson.Url))
 		}
 	}
 	fmt.Fprintf(&output, "> %s\n\n", strings.Join(metadata, " · "))
-	output.WriteString("## ✍️ Конспект\n\n")
+	output.WriteString("## ✍️ Notes\n\n")
 	visibleBlocks := 0
 	for _, block := range workspace.Blocks {
 		if strings.TrimSpace(block.Markdown) == "" {
@@ -528,20 +528,20 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 		if block.SourceUrl != "" || block.SourcePosition != "" {
 			parts := make([]string, 0, 2)
 			if block.SourcePosition != "" {
-				parts = append(parts, "**Позиция:** "+markdownInline(block.SourcePosition))
+				parts = append(parts, "**Position:** "+markdownInline(block.SourcePosition))
 			}
 			if block.SourceUrl != "" {
-				if link, ok := externalLink("Открыть источник ↗", block.SourceUrl); ok {
+				if link, ok := externalLink("Open source ↗", block.SourceUrl); ok {
 					parts = append(parts, link)
 				} else {
-					parts = append(parts, "**Адрес:** "+markdownCode(block.SourceUrl))
+					parts = append(parts, "**Address:** "+markdownCode(block.SourceUrl))
 				}
 			}
-			fmt.Fprintf(&output, "> **Источник блока** · %s\n\n", strings.Join(parts, " · "))
+			fmt.Fprintf(&output, "> **Block source** · %s\n\n", strings.Join(parts, " · "))
 		}
 	}
 	if visibleBlocks == 0 {
-		output.WriteString("> Конспект пока пуст.\n\n")
+		output.WriteString("> No notes yet.\n\n")
 	}
 	if len(workspace.Tasks) > 0 {
 		done := 0
@@ -550,16 +550,16 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 				done++
 			}
 		}
-		output.WriteString("## ✅ Домашняя работа\n\n")
-		fmt.Fprintf(&output, "**Выполнено заданий:** %d / %d\n\n", done, len(workspace.Tasks))
+		output.WriteString("## ✅ Homework\n\n")
+		fmt.Fprintf(&output, "**Tasks completed:** %d / %d\n\n", done, len(workspace.Tasks))
 		for index, task := range workspace.Tasks {
 			mark := "⬜"
 			if task.Status == wantstudyv1.HomeworkStatus_HOMEWORK_STATUS_DONE {
 				mark = "✅"
 			}
-			fmt.Fprintf(&output, "### %s Задание %d\n\n", mark, index+1)
+			fmt.Fprintf(&output, "### %s Task %d\n\n", mark, index+1)
 			if task.DueAtEpochMillis != nil {
-				fmt.Fprintf(&output, "**Срок:** %s\n\n", formatDate(task.GetDueAtEpochMillis()))
+				fmt.Fprintf(&output, "**Due:** %s\n\n", formatDate(task.GetDueAtEpochMillis()))
 			}
 			output.WriteString(task.PromptMarkdown)
 			if !strings.HasSuffix(task.PromptMarkdown, "\n") {
@@ -567,7 +567,7 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 			}
 			output.WriteByte('\n')
 			if strings.TrimSpace(task.SolutionMarkdown) != "" {
-				output.WriteString("<details>\n<summary><strong>Показать решение</strong></summary>\n\n")
+				output.WriteString("<details>\n<summary><strong>Show solution</strong></summary>\n\n")
 				output.WriteString(task.SolutionMarkdown)
 				if !strings.HasSuffix(task.SolutionMarkdown, "\n") {
 					output.WriteByte('\n')
@@ -577,17 +577,17 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 		}
 	}
 	if len(workspace.Files) > 0 {
-		output.WriteString("## 💻 Файлы\n\n")
-		output.WriteString("| Файл | Язык | Связано с |\n")
+		output.WriteString("## 💻 Files\n\n")
+		output.WriteString("| File | Language | Linked to |\n")
 		output.WriteString("| :-- | :-- | :-- |\n")
 		taskIndex := make(map[string]int, len(workspace.Tasks))
 		for index, task := range workspace.Tasks {
 			taskIndex[task.Id] = index + 1
 		}
 		for _, file := range workspace.Files {
-			owner := "Урок"
+			owner := "Lesson"
 			if index := taskIndex[file.GetHomeworkTaskId()]; index > 0 {
-				owner = fmt.Sprintf("Задание %d", index)
+				owner = fmt.Sprintf("Task %d", index)
 			}
 			language := markdownInline(file.Language)
 			if language == "" {
@@ -608,7 +608,7 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 			return strings.ToLower(concepts[left].Title) < strings.ToLower(concepts[right].Title)
 		})
 		if len(concepts) > 0 {
-			output.WriteString("## 🧠 Понятия\n\n")
+			output.WriteString("## 🧠 Concepts\n\n")
 			for _, concept := range concepts {
 				fmt.Fprintf(&output, "- [%s](../../../../concept/%s.md)\n", markdownInline(concept.Title), concept.ExportSlug)
 			}
@@ -619,18 +619,18 @@ func renderLesson(workspace *wantstudyv1.LessonWorkspace, source *wantstudyv1.Le
 
 func renderConceptIndex(concepts []*wantstudyv1.Concept) string {
 	var output strings.Builder
-	output.WriteString("[← К обучению](../README.md)\n\n")
-	output.WriteString("# 🧠 Понятия\n\n")
-	fmt.Fprintf(&output, "**Всего:** %d\n\n", len(concepts))
+	output.WriteString("[← Back to study](../README.md)\n\n")
+	output.WriteString("# 🧠 Concepts\n\n")
+	fmt.Fprintf(&output, "**Total:** %d\n\n", len(concepts))
 	if len(concepts) == 0 {
-		output.WriteString("> Понятия пока не добавлены.\n")
+		output.WriteString("> No concepts yet.\n")
 		return output.String()
 	}
 	items := append([]*wantstudyv1.Concept(nil), concepts...)
 	sort.Slice(items, func(left, right int) bool {
 		return strings.ToLower(items[left].Title) < strings.ToLower(items[right].Title)
 	})
-	output.WriteString("| Понятие | Псевдонимы |\n")
+	output.WriteString("| Concept | Aliases |\n")
 	output.WriteString("| :-- | :-- |\n")
 	for _, concept := range items {
 		aliases := "—"
@@ -648,14 +648,14 @@ func renderConceptIndex(concepts []*wantstudyv1.Concept) string {
 
 func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.ConceptRelation, conceptByID map[string]*wantstudyv1.Concept, lessonByBlock map[string]*wantstudyv1.Lesson, lessonPathByID map[string]string) string {
 	var output strings.Builder
-	output.WriteString("[← Все понятия](README.md) · [К обучению](../README.md)\n\n")
+	output.WriteString("[← All concepts](README.md) · [Back to study](../README.md)\n\n")
 	fmt.Fprintf(&output, "# 🧠 %s\n\n", markdownInline(concept.Title))
 	if len(concept.Aliases) > 0 {
 		values := make([]string, 0, len(concept.Aliases))
 		for _, alias := range concept.Aliases {
 			values = append(values, markdownInline(alias))
 		}
-		fmt.Fprintf(&output, "> **Также известно как:** %s\n\n", strings.Join(values, ", "))
+		fmt.Fprintf(&output, "> **Also known as:** %s\n\n", strings.Join(values, ", "))
 	}
 	if strings.TrimSpace(concept.DescriptionMarkdown) != "" {
 		output.WriteString(concept.DescriptionMarkdown)
@@ -664,7 +664,7 @@ func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.Concep
 		}
 		output.WriteByte('\n')
 	} else {
-		output.WriteString("> Описание пока не добавлено.\n\n")
+		output.WriteString("> No description yet.\n\n")
 	}
 	groups := make(map[string][]*wantstudyv1.Concept)
 	for _, relation := range relations {
@@ -684,9 +684,9 @@ func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.Concep
 			groups[direction] = append(groups[direction], other)
 		}
 	}
-	output.WriteString("## 🔗 Связи\n\n")
+	output.WriteString("## 🔗 Relations\n\n")
 	if len(groups) == 0 {
-		output.WriteString("> Связи пока не добавлены.\n\n")
+		output.WriteString("> No relations yet.\n\n")
 	} else {
 		labels := make([]string, 0, len(groups))
 		for label := range groups {
@@ -705,7 +705,7 @@ func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.Concep
 			output.WriteByte('\n')
 		}
 	}
-	output.WriteString("## 📍 Где встречается\n\n")
+	output.WriteString("## 📍 Mentioned in\n\n")
 	seen := make(map[string]bool)
 	lessons := make([]*wantstudyv1.Lesson, 0)
 	for _, blockID := range concept.BlockIds {
@@ -720,7 +720,7 @@ func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.Concep
 		return strings.ToLower(lessons[left].Title) < strings.ToLower(lessons[right].Title)
 	})
 	if len(lessons) == 0 {
-		output.WriteString("> Понятие пока не встречается в конспектах.\n")
+		output.WriteString("> Not mentioned in notes yet.\n")
 	} else {
 		for _, lesson := range lessons {
 			fmt.Fprintf(&output, "- [%s](../%s/README.md)\n", markdownInline(lesson.Title), lessonPathByID[lesson.Id])
@@ -732,13 +732,13 @@ func renderConcept(concept *wantstudyv1.Concept, relations []*wantstudyv1.Concep
 func lessonStatusLabel(value wantstudyv1.LessonStatus) string {
 	switch value {
 	case wantstudyv1.LessonStatus_LESSON_STATUS_STUDYING:
-		return "Изучается"
+		return "Studying"
 	case wantstudyv1.LessonStatus_LESSON_STATUS_HOMEWORK:
-		return "Домашняя работа"
+		return "Homework"
 	case wantstudyv1.LessonStatus_LESSON_STATUS_MASTERED:
-		return "Освоен"
+		return "Mastered"
 	default:
-		return "Запланирован"
+		return "Planned"
 	}
 }
 
@@ -758,32 +758,32 @@ func lessonStatusDisplay(value wantstudyv1.LessonStatus) string {
 func sourceTypeLabel(value wantstudyv1.LearningSourceType) string {
 	switch value {
 	case wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_COURSE:
-		return "Курс"
+		return "Course"
 	case wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_BOOK:
-		return "Книга"
+		return "Book"
 	case wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_ARTICLE:
-		return "Статья"
+		return "Article"
 	case wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_VIDEO:
-		return "Видео"
+		return "Video"
 	default:
-		return "Другое"
+		return "Other"
 	}
 }
 
 func blockHeading(value wantstudyv1.NoteBlockType) string {
 	switch value {
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_DEFINITION:
-		return "📘 Определение"
+		return "📘 Definition"
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_CLAIM:
-		return "💡 Тезис"
+		return "💡 Claim"
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_QUOTE:
-		return "💬 Цитата"
+		return "💬 Quote"
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_EXAMPLE:
-		return "🧪 Пример"
+		return "🧪 Example"
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_QUESTION:
-		return "❓ Вопрос"
+		return "❓ Question"
 	case wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_SUMMARY:
-		return "🧭 Итог"
+		return "🧭 Summary"
 	default:
 		return ""
 	}
@@ -792,26 +792,26 @@ func blockHeading(value wantstudyv1.NoteBlockType) string {
 func relationTypeLabel(value wantstudyv1.ConceptRelationType) string {
 	switch value {
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_RELATED_TO:
-		return "Связано с"
+		return "Related to"
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PART_OF:
-		return "Часть"
+		return "Part of"
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PREREQUISITE_FOR:
-		return "Предпосылка для"
+		return "Prerequisite for"
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_CONTRASTS_WITH:
-		return "Противопоставляется"
+		return "Contrasts with"
 	default:
-		return "Применяется к"
+		return "Applies to"
 	}
 }
 
 func relationTypeReverseLabel(value wantstudyv1.ConceptRelationType) string {
 	switch value {
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PART_OF:
-		return "Содержит"
+		return "Contains"
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PREREQUISITE_FOR:
-		return "Зависит от"
+		return "Depends on"
 	case wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_APPLIES_TO:
-		return "Область применения для"
+		return "Applied here"
 	default:
 		return relationTypeLabel(value)
 	}
@@ -866,7 +866,7 @@ func encodeRelativePath(value string) string {
 }
 
 func formatDate(epochMillis int64) string {
-	return time.UnixMilli(epochMillis).UTC().Format("02.01.2006")
+	return time.UnixMilli(epochMillis).UTC().Format("02 Jan 2006")
 }
 
 func writeBlockquote(output *strings.Builder, value string) {

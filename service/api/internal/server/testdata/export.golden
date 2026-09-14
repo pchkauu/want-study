@@ -6,35 +6,35 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "5fcc130b6285c9bfb5dd77141bac2e89593c312b39e00272c9f8b1cba7a5892b"
+      "sha256": "9ede69a2e0cda5ebf1a439bf595983a9b29dfcd1cecfec776fb8e1dbcd70b77d"
     },
     {
       "path": "concept/README.md",
-      "sha256": "51875f42889676339a6dacd687eb3d0e5bcb2568f9621510e47a752800202277"
+      "sha256": "63a420c52bb0fdbfa1ae838be0b037e977237e5a017efff697fa803cd4996d6e"
     },
     {
       "path": "concept/move.md",
-      "sha256": "02c70c1b08cc00028c6527afc1b90968fe0cdadafd89982f465115d1a900416a"
+      "sha256": "7d160b0894314840c0f38fdaddff8e44e614088526906386f705c550a47e49b1"
     },
     {
       "path": "concept/raii.md",
-      "sha256": "19c2dc6f8eb1f42ed270ca25ddc1688d13892a4bcc62e9d955d8d14aa860cc4d"
+      "sha256": "3a7db690b7c07605963f61e9d8608c2465974b2b49476605b018e92d22cabd2e"
     },
     {
       "path": "source/cpp-book/README.md",
-      "sha256": "7be084982d6356b00097815750667a171b713d826e1a737c4984f54bb46be209"
+      "sha256": "bbe0007ac9bf6f54d0220c8927ea969af1a1a0e096812c83d8fbb7e39b5766f1"
     },
     {
       "path": "source/cpp-book/lesson/chapter-1/README.md",
-      "sha256": "0b417145cc98bbcc0c4138ea92b315e47e655e3f71b4108170d138404ceaa645"
+      "sha256": "e8b8684e6e764e52bd6cf2f6182851b5d6348bc7f35a2b749bc8054b362e7b78"
     },
     {
       "path": "source/stepik-cpp/README.md",
-      "sha256": "9ee1ec4ab1657bc4bb5f2d9207fbc80c8c48ffbb6268afb2554770892d94818e"
+      "sha256": "2f53631ecfb5cf5831f50d48fcee4daa6fcd081543ba86a45bb37e4067911b01"
     },
     {
       "path": "source/stepik-cpp/lesson/ownership/README.md",
-      "sha256": "83118f142507fc2a83e187482d097b6472472a62381111deb000169af11c731f"
+      "sha256": "8085c1d08c0b8ab5beca6d34e2d71ba85fee504a66f58d93923249463c526505"
     },
     {
       "path": "source/stepik-cpp/lesson/ownership/file/notes/read me.txt",
@@ -46,11 +46,11 @@
     },
     {
       "path": "source/stepik-cpp/lesson/practice/README.md",
-      "sha256": "df96780eeeefb3b61919c3c392a536a4faa3e35e1544586c3897106134ac57a7"
+      "sha256": "875f32af2bc1936cd49189be11d7bbf824cf1922c64040519b0ef54ba6c89645"
     },
     {
       "path": "source/stepik-cpp/lesson/setup/README.md",
-      "sha256": "7ffbde926530f8c4639cc330e82b1d95ca96805a034dda09a5ee514896b1cc5c"
+      "sha256": "9f0b23b0a7acea8a2ac157557e82406c92f230fdb75394783bb97714eaaddacd"
     }
   ]
 }
@@ -59,189 +59,189 @@
 # 📚 C \| C++ \[курс\]
 
 > [!NOTE]
-> **Цель обучения**
+> **Learning goal**
 >
 > Разобраться в системном программировании.
 >
 > Собрать учебный проект.
 
-## 📈 Прогресс
+## 📈 Progress
 
-| Направление | Выполнено | Результат |
+| Area | Completed | Result |
 | :-- | --: | --: |
-| 📖 Материал | 1 из 4 | **25%** |
-| ✅ Домашняя работа | 1 из 2 | **50%** |
+| 📖 Lessons | 1 of 4 | **25%** |
+| ✅ Homework | 1 of 2 | **50%** |
 
-## 🧭 Статус занятий
+## 🧭 Lesson status
 
-| 🗓️ Запланировано | 📖 Изучается | 🧩 Домашняя работа | ✅ Освоено |
+| 🗓️ Planned | 📖 Studying | 🧩 Homework | ✅ Mastered |
 | --: | --: | --: | --: |
 | 1 | 1 | 1 | 1 |
 
-## 🎓 Источники
+## 🎓 Sources
 
-| Источник | Формат | Уроки | Освоено |
+| Source | Type | Lessons | Mastered |
 | :-- | :-- | --: | --: |
-| [Stepik \| Системный C++](source/stepik-cpp/README.md) | Курс | 3 | 0 |
-| [Книга \[C++\]](source/cpp-book/README.md) | Книга | 1 | 1 |
+| [Stepik \| Системный C++](source/stepik-cpp/README.md) | Course | 3 | 0 |
+| [Книга \[C++\]](source/cpp-book/README.md) | Book | 1 | 1 |
 
-[🧠 Открыть карту понятий](concept/README.md)
+[🧠 Open concept map](concept/README.md)
 
 ===== concept/README.md =====
-[← К обучению](../README.md)
+[← Back to study](../README.md)
 
-# 🧠 Понятия
+# 🧠 Concepts
 
-**Всего:** 2
+**Total:** 2
 
-| Понятие | Псевдонимы |
+| Concept | Aliases |
 | :-- | :-- |
 | [Move \[semantics\]](move.md) | — |
 | [RAII \| владение](raii.md) | Resource Acquisition, Управление \| ресурсом |
 
 ===== concept/move.md =====
-[← Все понятия](README.md) · [К обучению](../README.md)
+[← All concepts](README.md) · [Back to study](../README.md)
 
 # 🧠 Move \[semantics\]
 
-> Описание пока не добавлено.
+> No description yet.
 
-## 🔗 Связи
+## 🔗 Relations
 
-### Зависит от
+### Depends on
 
 - [RAII \| владение](raii.md)
 
-## 📍 Где встречается
+## 📍 Mentioned in
 
 - [Владение \| ресурсами](../source/stepik-cpp/lesson/ownership/README.md)
 
 ===== concept/raii.md =====
-[← Все понятия](README.md) · [К обучению](../README.md)
+[← All concepts](README.md) · [Back to study](../README.md)
 
 # 🧠 RAII \| владение
 
-> **Также известно как:** Resource Acquisition, Управление \| ресурсом
+> **Also known as:** Resource Acquisition, Управление \| ресурсом
 
 Ресурс живёт столько же, сколько владеющий объект.
 
-## 🔗 Связи
+## 🔗 Relations
 
-### Предпосылка для
+### Prerequisite for
 
 - [Move \[semantics\]](move.md)
 
-## 📍 Где встречается
+## 📍 Mentioned in
 
 - [Владение \| ресурсами](../source/stepik-cpp/lesson/ownership/README.md)
 
 ===== source/cpp-book/README.md =====
-[← К обучению](../../README.md)
+[← Back to study](../../README.md)
 
 # 🎓 Книга \[C++\]
 
-> Книга · **Адрес:** `legacy address`
+> Book · **Address:** `legacy address`
 
-## 📊 Прогресс
+## 📊 Progress
 
-**Освоено уроков:** 1 / 1 · **Прогресс:** 100%
+**Lessons mastered:** 1 / 1 · **Progress:** 100%
 
-## 📑 Программа
+## 📑 Curriculum
 
-### Без раздела
+### Uncategorized
 
-| Позиция | Урок | Статус |
+| Position | Lesson | Status |
 | :-- | :-- | :-- |
-| — | [Глава 1](lesson/chapter-1/README.md) | ✅ Освоен |
+| — | [Глава 1](lesson/chapter-1/README.md) | ✅ Mastered |
 
 
 ===== source/cpp-book/lesson/chapter-1/README.md =====
-[← Книга \[C++\]](../../README.md) · [К обучению](../../../../README.md)
+[← Книга \[C++\]](../../README.md) · [Back to study](../../../../README.md)
 
 # 📝 Глава 1
 
-> ✅ Освоен · **Начато:** 12.09.2026 · **Освоено:** 13.09.2026 · **Адрес:** `legacy address`
+> ✅ Mastered · **Started:** 12 Sep 2026 · **Mastered:** 13 Sep 2026 · **Address:** `legacy address`
 
-## ✍️ Конспект
+## ✍️ Notes
 
-> Конспект пока пуст.
+> No notes yet.
 
 
 ===== source/stepik-cpp/README.md =====
-[← К обучению](../../README.md)
+[← Back to study](../../README.md)
 
 # 🎓 Stepik \| Системный C++
 
-> Курс · **Автор:** Сергей \[Автор\] · [Открыть источник ↗](<https://example.com/course>)
+> Course · **Author:** Сергей \[Автор\] · [Open source ↗](<https://example.com/course>)
 
-## 📊 Прогресс
+## 📊 Progress
 
-**Освоено уроков:** 0 / 3 · **Прогресс:** 0%
+**Lessons mastered:** 0 / 3 · **Progress:** 0%
 
-## 📑 Программа
+## 📑 Curriculum
 
 ### Основы \| владение
 
-| Позиция | Урок | Статус |
+| Position | Lesson | Status |
 | :-- | :-- | :-- |
-| 1.1 | [Подготовка \[среды\]](lesson/setup/README.md) | 🗓️ Запланирован |
-| 1.2 | [Владение \| ресурсами](lesson/ownership/README.md) | 📖 Изучается |
+| 1.1 | [Подготовка \[среды\]](lesson/setup/README.md) | 🗓️ Planned |
+| 1.2 | [Владение \| ресурсами](lesson/ownership/README.md) | 📖 Studying |
 
 ### Практика
 
-| Позиция | Урок | Статус |
+| Position | Lesson | Status |
 | :-- | :-- | :-- |
-| 1.3 | [Практическая работа](lesson/practice/README.md) | 🧩 Домашняя работа |
+| 1.3 | [Практическая работа](lesson/practice/README.md) | 🧩 Homework |
 
 
 ===== source/stepik-cpp/lesson/ownership/README.md =====
-[← Stepik \| Системный C++](../../README.md) · [К обучению](../../../../README.md)
+[← Stepik \| Системный C++](../../README.md) · [Back to study](../../../../README.md)
 
 # 📝 Владение \| ресурсами
 
-> 📖 Изучается · **Позиция:** 1.2 · **Начато:** 12.09.2026 · [Открыть занятие ↗](<https://example.com/lesson?q=c%2B%2B>)
+> 📖 Studying · **Position:** 1.2 · **Started:** 12 Sep 2026 · [Open lesson ↗](<https://example.com/lesson?q=c%2B%2B>)
 
-## ✍️ Конспект
+## ✍️ Notes
 
 Короткое введение с **акцентом**.
 
-### 📘 Определение
+### 📘 Definition
 
 **RAII** связывает ресурс со временем жизни объекта.
 
-### 💡 Тезис
+### 💡 Claim
 
 Перемещение передаёт владение без копирования.
 
-### 💬 Цитата
+### 💬 Quote
 
 > Владение должно быть очевидным.
 
-### 🧪 Пример
+### 🧪 Example
 
 ```cpp
 auto value = std::make_unique<int>(42);
 ```
 
-> **Источник блока** · **Позиция:** 12:30 · [Открыть источник ↗](<https://example.com/video?t=750>)
+> **Block source** · **Position:** 12:30 · [Open source ↗](<https://example.com/video?t=750>)
 
-### ❓ Вопрос
+### ❓ Question
 
 Когда нужен `std::move`?
 
-> **Источник блока** · **Адрес:** `legacy address`
+> **Block source** · **Address:** `legacy address`
 
-### 🧭 Итог
+### 🧭 Summary
 
 Ресурс имеет одного явного владельца.
 
-## ✅ Домашняя работа
+## ✅ Homework
 
-**Выполнено заданий:** 1 / 2
+**Tasks completed:** 1 / 2
 
-### ✅ Задание 1
+### ✅ Task 1
 
-**Срок:** 14.09.2026
+**Due:** 14 Sep 2026
 
 Реализовать `Owner<T>`:
 
@@ -249,7 +249,7 @@ auto value = std::make_unique<int>(42);
 - добавить перемещение.
 
 <details>
-<summary><strong>Показать решение</strong></summary>
+<summary><strong>Show solution</strong></summary>
 
 ```cpp
 Owner(Owner&&) = default;
@@ -257,18 +257,18 @@ Owner(Owner&&) = default;
 
 </details>
 
-### ⬜ Задание 2
+### ⬜ Task 2
 
 Объяснить правило пяти.
 
-## 💻 Файлы
+## 💻 Files
 
-| Файл | Язык | Связано с |
+| File | Language | Linked to |
 | :-- | :-- | :-- |
-| [solution/main.cpp](file/solution/main.cpp) | cpp | Задание 1 |
-| [notes/read me.txt](file/notes/read%20me.txt) | text | Урок |
+| [solution/main.cpp](file/solution/main.cpp) | cpp | Task 1 |
+| [notes/read me.txt](file/notes/read%20me.txt) | text | Lesson |
 
-## 🧠 Понятия
+## 🧠 Concepts
 
 - [Move \[semantics\]](../../../../concept/move.md)
 - [RAII \| владение](../../../../concept/raii.md)
@@ -280,24 +280,24 @@ ownership notes
 int main() {}
 
 ===== source/stepik-cpp/lesson/practice/README.md =====
-[← Stepik \| Системный C++](../../README.md) · [К обучению](../../../../README.md)
+[← Stepik \| Системный C++](../../README.md) · [Back to study](../../../../README.md)
 
 # 📝 Практическая работа
 
-> 🧩 Домашняя работа · **Позиция:** 1.3
+> 🧩 Homework · **Position:** 1.3
 
-## ✍️ Конспект
+## ✍️ Notes
 
-> Конспект пока пуст.
+> No notes yet.
 
 
 ===== source/stepik-cpp/lesson/setup/README.md =====
-[← Stepik \| Системный C++](../../README.md) · [К обучению](../../../../README.md)
+[← Stepik \| Системный C++](../../README.md) · [Back to study](../../../../README.md)
 
 # 📝 Подготовка \[среды\]
 
-> 🗓️ Запланирован · **Позиция:** 1.1
+> 🗓️ Planned · **Position:** 1.1
 
-## ✍️ Конспект
+## ✍️ Notes
 
-> Конспект пока пуст.
+> No notes yet.

@@ -34,9 +34,34 @@ func TestRenderSnapshotGolden(t *testing.T) {
 		if strings.Contains(content, "lesson-studying") || strings.Contains(content, "block-definition") || strings.Contains(content, "id:") {
 			t.Fatalf("%s contains an internal identifier", file.path)
 		}
+		for _, oldLabel := range []string{
+			"> **Цель обучения**",
+			"## 📈 Прогресс",
+			"## 🧭 Статус занятий",
+			"## 🎓 Источники",
+			"[← К обучению]",
+			"## 📑 Программа",
+			"| Позиция | Урок | Статус |",
+			"## ✍️ Конспект",
+			"> **Источник блока**",
+			"## ✅ Домашняя работа",
+			"<strong>Показать решение</strong>",
+			"## 💻 Файлы",
+			"## 🧠 Понятия",
+			"## 🔗 Связи",
+			"## 📍 Где встречается",
+		} {
+			if strings.Contains(content, oldLabel) {
+				t.Fatalf("%s contains old template label %q", file.path, oldLabel)
+			}
+		}
 	}
+	root := exportFileContent(t, files, "README.md")
 	lesson := exportFileContent(t, files, "source/stepik-cpp/lesson/ownership/README.md")
-	if strings.Count(lesson, "### 🧪 Пример") != 1 {
+	if !strings.Contains(root, "Разобраться в системном программировании.") || !strings.Contains(lesson, "Короткое введение с **акцентом**.") {
+		t.Fatal("user-authored Markdown was not preserved")
+	}
+	if strings.Count(lesson, "### 🧪 Example") != 1 {
 		t.Fatal("empty note block was rendered")
 	}
 	if strings.Contains(lesson, "](<legacy address>)") || !strings.Contains(lesson, "legacy address") {
@@ -58,6 +83,94 @@ func TestRenderSnapshotGolden(t *testing.T) {
 		gotEnd := min(len(got), index+80)
 		wantEnd := min(len(want), index+80)
 		t.Fatalf("export differs from golden at byte %d: got %q, want %q", index, got[start:gotEnd], want[start:wantEnd])
+	}
+}
+
+func TestExportEnglishLabels(t *testing.T) {
+	statusCases := []struct {
+		name  string
+		value wantstudyv1.LessonStatus
+		want  string
+	}{
+		{name: "planned", value: wantstudyv1.LessonStatus_LESSON_STATUS_PLANNED, want: "Planned"},
+		{name: "studying", value: wantstudyv1.LessonStatus_LESSON_STATUS_STUDYING, want: "Studying"},
+		{name: "homework", value: wantstudyv1.LessonStatus_LESSON_STATUS_HOMEWORK, want: "Homework"},
+		{name: "mastered", value: wantstudyv1.LessonStatus_LESSON_STATUS_MASTERED, want: "Mastered"},
+	}
+	for _, test := range statusCases {
+		t.Run("status/"+test.name, func(t *testing.T) {
+			if got := lessonStatusLabel(test.value); got != test.want {
+				t.Fatalf("lessonStatusLabel() = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	sourceCases := []struct {
+		name  string
+		value wantstudyv1.LearningSourceType
+		want  string
+	}{
+		{name: "course", value: wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_COURSE, want: "Course"},
+		{name: "book", value: wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_BOOK, want: "Book"},
+		{name: "article", value: wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_ARTICLE, want: "Article"},
+		{name: "video", value: wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_VIDEO, want: "Video"},
+		{name: "other", value: wantstudyv1.LearningSourceType_LEARNING_SOURCE_TYPE_OTHER, want: "Other"},
+	}
+	for _, test := range sourceCases {
+		t.Run("source/"+test.name, func(t *testing.T) {
+			if got := sourceTypeLabel(test.value); got != test.want {
+				t.Fatalf("sourceTypeLabel() = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	blockCases := []struct {
+		name  string
+		value wantstudyv1.NoteBlockType
+		want  string
+	}{
+		{name: "text", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_TEXT, want: ""},
+		{name: "definition", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_DEFINITION, want: "📘 Definition"},
+		{name: "claim", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_CLAIM, want: "💡 Claim"},
+		{name: "quote", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_QUOTE, want: "💬 Quote"},
+		{name: "example", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_EXAMPLE, want: "🧪 Example"},
+		{name: "question", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_QUESTION, want: "❓ Question"},
+		{name: "summary", value: wantstudyv1.NoteBlockType_NOTE_BLOCK_TYPE_SUMMARY, want: "🧭 Summary"},
+	}
+	for _, test := range blockCases {
+		t.Run("block/"+test.name, func(t *testing.T) {
+			if got := blockHeading(test.value); got != test.want {
+				t.Fatalf("blockHeading() = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	relationCases := []struct {
+		name        string
+		value       wantstudyv1.ConceptRelationType
+		want        string
+		wantReverse string
+	}{
+		{name: "related", value: wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_RELATED_TO, want: "Related to", wantReverse: "Related to"},
+		{name: "part", value: wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PART_OF, want: "Part of", wantReverse: "Contains"},
+		{name: "prerequisite", value: wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_PREREQUISITE_FOR, want: "Prerequisite for", wantReverse: "Depends on"},
+		{name: "contrasts", value: wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_CONTRASTS_WITH, want: "Contrasts with", wantReverse: "Contrasts with"},
+		{name: "applies", value: wantstudyv1.ConceptRelationType_CONCEPT_RELATION_TYPE_APPLIES_TO, want: "Applies to", wantReverse: "Applied here"},
+	}
+	for _, test := range relationCases {
+		t.Run("relation/"+test.name, func(t *testing.T) {
+			if got := relationTypeLabel(test.value); got != test.want {
+				t.Fatalf("relationTypeLabel() = %q, want %q", got, test.want)
+			}
+			if got := relationTypeReverseLabel(test.value); got != test.wantReverse {
+				t.Fatalf("relationTypeReverseLabel() = %q, want %q", got, test.wantReverse)
+			}
+		})
+	}
+
+	date := time.Date(2026, time.September, 15, 1, 30, 0, 0, time.FixedZone("test", 3*60*60))
+	if got, want := formatDate(date.UnixMilli()), "14 Sep 2026"; got != want {
+		t.Fatalf("formatDate() = %q, want %q", got, want)
 	}
 }
 
