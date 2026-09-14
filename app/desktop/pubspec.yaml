@@ -41,3 +41,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: GolosText
+      fonts:
+        - asset: asset/font/golos_text_variable.ttf

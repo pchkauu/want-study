@@ -55,66 +55,83 @@ final class _StudyScreenState extends State<StudyScreen> {
               title: const Text('Want Study'),
               actions: [_diagnosticsButton(context)],
             ),
-            body: Center(
-              child: Container(
-                width: 520,
-                padding: const EdgeInsets.all(40),
-                decoration: BoxDecoration(
-                  color: WantStudyColor.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: WantStudyColor.outline),
+            body: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0.8, -0.9),
+                  radius: 1.1,
+                  colors: [Color(0x1F6152ED), Colors.transparent],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: WantStudyColor.error.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(18),
+              ),
+              child: Center(
+                child: Container(
+                  width: 560,
+                  padding: const EdgeInsets.fromLTRB(44, 40, 44, 46),
+                  decoration: BoxDecoration(
+                    color: WantStudyColor.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 36,
+                        offset: const Offset(0, 18),
                       ),
-                      child: const Icon(
-                        Icons.cloud_off_outlined,
-                        color: WantStudyColor.error,
-                        size: 30,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Локальный сервис недоступен',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Запустите сервисы и повторите проверку.',
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: WantStudyColor.textMuted),
-                    ),
-                    const SizedBox(height: 16),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: WantStudyColor.background,
-                        borderRadius: BorderRadius.all(Radius.circular(12)),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: WantStudyColor.error.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                        child: SelectableText(
-                          'docker compose up -d',
-                          style: TextStyle(fontFamily: 'monospace'),
+                        child: const Icon(
+                          Icons.cloud_off_outlined,
+                          color: WantStudyColor.error,
+                          size: 30,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: () => setState(() => _health = _checkHealth()),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Проверить снова'),
-                    ),
-                  ],
+                      const SizedBox(height: 24),
+                      Text(
+                        'Локальный сервис недоступен',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Запустите сервисы и повторите проверку.',
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: WantStudyColor.textMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: WantStudyColor.background,
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: SelectableText(
+                            'docker compose up -d',
+                            style: TextStyle(fontFamily: 'monospace'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () =>
+                            setState(() => _health = _checkHealth()),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Проверить снова'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -124,8 +141,8 @@ final class _StudyScreenState extends State<StudyScreen> {
           children: [
             Positioned.fill(child: getIt<StudyFeatureFacadeV2>().buildRoot()),
             Positioned(
-              left: MediaQuery.sizeOf(context).width >= 1200 ? 20 : 14,
-              bottom: 18,
+              left: 26,
+              bottom: 24,
               child: _diagnosticsButton(context),
             ),
           ],

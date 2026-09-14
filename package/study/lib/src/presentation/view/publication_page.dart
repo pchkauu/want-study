@@ -146,24 +146,25 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
                 ),
               ],
             ),
+            if (busy) ...[
+              const SizedBox(height: 14),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
             const SizedBox(height: 16),
             Text(
               'Предпросмотр не меняет репозиторий. Запись выполняется только после подтверждения.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 20),
+            _PublicationSteps(state: state),
+            const SizedBox(height: 22),
             FilledButton.icon(
               onPressed: busy
                   ? null
                   : () => _controller.add(
                       PublicationPreviewRequestedV2(widget.study),
                     ),
-              icon: busy
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.preview_outlined),
+              icon: const Icon(Icons.preview_outlined),
               label: const Text('Построить предпросмотр'),
             ),
             if (state.loadState == PublicationLoadStateV2.pushFailed) ...[
@@ -325,5 +326,82 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
     };
     ScaffoldMessenger.maybeOf(context)
         ?.showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+final class _PublicationSteps extends StatelessWidget {
+  final PublicationStateV2 state;
+
+  const _PublicationSteps({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final published = state.loadState == PublicationLoadStateV2.published;
+    final committed =
+        published || state.loadState == PublicationLoadStateV2.pushFailed;
+    final prepared = state.preview != null || committed;
+    return Column(
+      children: [
+        _PublicationStep(
+          index: 1,
+          label: 'Проверка файлов',
+          complete: prepared,
+        ),
+        _PublicationStep(
+          index: 2,
+          label: 'Создание commit',
+          complete: committed,
+        ),
+        _PublicationStep(
+          index: 3,
+          label: 'Отправка изменений',
+          complete: published,
+        ),
+      ],
+    );
+  }
+}
+
+final class _PublicationStep extends StatelessWidget {
+  final int index;
+  final String label;
+  final bool complete;
+
+  const _PublicationStep({
+    required this.index,
+    required this.label,
+    required this.complete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = complete
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: complete
+                ? Icon(Icons.check_rounded, size: 15, color: color)
+                : Text(
+                    '$index',
+                    style: theme.textTheme.labelSmall?.copyWith(color: color),
+                  ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+        ],
+      ),
+    );
   }
 }

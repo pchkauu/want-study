@@ -24,6 +24,11 @@ final class ConceptPageV1 extends StatefulWidget {
 
 final class _ConceptPageV1State extends State<ConceptPageV1> {
   final _search = TextEditingController();
+  String? _renderGraphTopology;
+  String? _graphPresentation;
+  Graph? _renderGraph;
+  Map<String, ConceptV1> _conceptById = {};
+  Widget? _renderedGraphContent;
   var _isActive = true;
 
   @override
@@ -112,7 +117,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
           if (state.searchResult.isNotEmpty) ...[
             const SizedBox(height: 12),
             SizedBox(
-              height: 42,
+              height: 52,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: state.searchResult.length,
@@ -165,8 +170,10 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
         onAction: _create,
       );
     }
-    final view = _buildGraph(graph);
-    final selected = state.selectedConcept;
+    final view = _graphView(graph);
+    final selected =
+        state.selectedConcept ??
+        (graph.concept.length == 1 ? graph.concept.single : null);
     final inspector = selected == null
         ? const _EmptyConceptInspector()
         : _ConceptDetails(
@@ -191,38 +198,34 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             child: Center(
               child: _conceptChip(
                 concept: graph.concept.single,
-                selectedConceptId: state.selectedConcept?.id,
+                selectedConceptId: selected?.id,
               ),
             ),
           )
-        : InteractiveViewer(
-            constrained: false,
-            boundaryMargin: const EdgeInsets.all(120),
-            minScale: 0.1,
-            maxScale: 3,
-            child: GraphView(
-              key: ValueKey(_topologyKey(graph)),
-              graph: view.$1,
-              algorithm: FruchtermanReingoldAlgorithm(
-                FruchtermanReingoldConfiguration(iterations: 250),
-              ),
-              animated: false,
-              paint: Paint()
-                ..color = Theme.of(context).colorScheme.outline
-                ..strokeWidth = 1.2,
-              builder: (node) {
-                final id = node.key?.value as String;
-                return _conceptChip(
-                  concept: view.$2[id]!,
-                  selectedConceptId: state.selectedConcept?.id,
-                );
-              },
-            ),
-          );
+        : _multiNodeGraphContent(graph, view, selected?.id);
     final canvas = StudySurface(
+      key: const ValueKey('concept-graph-canvas'),
       padding: EdgeInsets.zero,
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.88),
       child: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            child: Row(
+              children: [
+                Text(
+                  'Карта знаний',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Spacer(),
+                Text(
+                  'Понятий: ${graph.concept.length}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const Divider(),
           if (graph.isTruncated)
             Container(
               width: double.infinity,
@@ -235,16 +238,18 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
       ),
     );
     return LayoutBuilder(
-      builder: (context, _) {
+      builder: (context, constraints) {
         if (MediaQuery.sizeOf(context).width < 960) {
-          return Column(
-            children: [
-              Expanded(child: canvas),
-              if (selected != null) ...[
-                const SizedBox(height: 14),
-                SizedBox(height: 250, child: inspector),
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                SizedBox(height: constraints.maxHeight, child: canvas),
+                if (selected != null) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(height: 250, child: inspector),
+                ],
               ],
-            ],
+            ),
           );
         }
         return Row(
@@ -261,7 +266,12 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   (Graph, Map<String, ConceptV1>) _buildGraph(ConceptGraphV1 value) {
     final graph = Graph();
     final concepts = {for (final item in value.concept) item.id: item};
-    final nodes = {for (final id in concepts.keys) id: Node.Id(id)};
+    final id = concepts.keys.toList()..sort();
+    final nodes = {
+      for (var index = 0; index < id.length; index++)
+        id[index]: Node.Id(id[index])
+          ..position = Offset((index % 5) * 180.0, (index ~/ 5) * 96.0),
+    };
     graph.addNodes(nodes.values.toList());
     for (final relation in value.relation) {
       final source = nodes[relation.sourceConceptId];
@@ -273,25 +283,98 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     return (graph, concepts);
   }
 
+  (Graph, Map<String, ConceptV1>) _graphView(ConceptGraphV1 value) {
+    final topology = _topologyKey(value);
+    if (_renderGraphTopology != topology || _renderGraph == null) {
+      final view = _buildGraph(value);
+      _renderGraphTopology = topology;
+      _renderGraph = view.$1;
+      _conceptById = view.$2;
+    } else {
+      _conceptById = {for (final concept in value.concept) concept.id: concept};
+    }
+    return (_renderGraph!, _conceptById);
+  }
+
+  Widget _multiNodeGraphContent(
+    ConceptGraphV1 value,
+    (Graph, Map<String, ConceptV1>) view,
+    String? selectedConceptId,
+  ) {
+    final topology = _topologyKey(value);
+    final conceptPresentation =
+        value.concept
+            .map(
+              (concept) =>
+                  '${concept.id}:${concept.title}:${concept.isArchived}',
+            )
+            .toList()
+          ..sort();
+    final presentation = [selectedConceptId, ...conceptPresentation].join('|');
+    // Reusing the same widget avoids losing graph children during unrelated
+    // parent rebuilds. Visible node changes still recreate the graph safely.
+    if (_renderedGraphContent == null || _graphPresentation != presentation) {
+      _graphPresentation = presentation;
+      _renderedGraphContent = InteractiveViewer(
+        constrained: false,
+        boundaryMargin: const EdgeInsets.all(120),
+        minScale: 0.1,
+        maxScale: 3,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: GraphView(
+            key: ValueKey(presentation),
+            graph: view.$1,
+            algorithm: FruchtermanReingoldAlgorithm(
+              FruchtermanReingoldConfiguration(
+                iterations: 250,
+                repulsionRate: 0.3,
+                attractionRate: 0.04,
+                repulsionPercentage: 0.5,
+                shuffleNodes: false,
+              ),
+            ),
+            animated: false,
+            paint: Paint()
+              ..color = Theme.of(context).colorScheme.onSurfaceVariant
+                  .withValues(alpha: 0.55)
+              ..strokeWidth = 1.5,
+            builder: (node) {
+              final id = node.key?.value as String;
+              return _conceptChip(
+                concept: view.$2[id]!,
+                selectedConceptId: selectedConceptId,
+              );
+            },
+          ),
+        ),
+      );
+    }
+    return KeyedSubtree(key: ValueKey(topology), child: _renderedGraphContent!);
+  }
+
   Widget _conceptChip({
     required ConceptV1 concept,
     required String? selectedConceptId,
   }) {
     final selected = concept.id == selectedConceptId;
-    return InputChip(
-      key: ValueKey(concept.id),
-      selected: selected,
-      label: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
-        child: Text(
-          concept.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+    return Material(
+      color: Colors.transparent,
+      child: InputChip(
+        key: ValueKey(concept.id),
+        selected: selected,
+        label: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: Text(
+            concept.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        onPressed: () => _select(concept),
+        onDeleted: selected ? () => _edit(concept) : null,
+        deleteIcon: const Icon(Icons.edit_outlined, size: 18),
       ),
-      onPressed: () => _select(concept),
-      onDeleted: selected ? () => _edit(concept) : null,
-      deleteIcon: const Icon(Icons.edit_outlined, size: 18),
     );
   }
 
@@ -369,12 +452,12 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     }
     var targetId = target.first.id;
     var type = ConceptRelationTypeV1.relatedTo;
-    final relation = await showDialog<ConceptRelationV1>(
+    final relation = await showStudyDialogV1<ConceptRelationV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: const Text('Новая связь'),
-          content: SizedBox(
+          child: SizedBox(
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -457,9 +540,9 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     final result = await showStudyDialogV1<(String, String, List<String>)>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: Text(concept == null ? 'Новое понятие' : 'Понятие'),
-          content: SizedBox(
+          child: SizedBox(
             width: 560,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -628,7 +711,7 @@ final class _ConceptDetails extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 'Привязки к блокам: ${concept.blockIds.length}',

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:domain_error/domain_error.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:launch_mode/launch_mode.dart';
 import 'package:mocktail/mocktail.dart';
@@ -48,8 +50,13 @@ final class _ErrorReporter implements StudyErrorReporterV2 {
 }
 
 void main() {
-  setUpAll(() {
+  setUpAll(() async {
     LaunchMode.initializeAutomatically();
+    final fontLoader = FontLoader('GolosText')
+      ..addFont(rootBundle.load('asset/font/golos_text_variable.ttf'));
+    final iconLoader = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await Future.wait([fontLoader.load(), iconLoader.load()]);
     registerFallbackValue(
       LessonStatusChangeV1(
         lesson: _studyingLesson,
@@ -85,8 +92,9 @@ void main() {
     await tester.tap(find.text('Создать обучение'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Отмена'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    expect(find.text('Новое обучение'), findsNothing);
     tester.view.physicalSize = const Size(1024, 720);
     await tester.pumpAndSettle();
 
@@ -116,10 +124,8 @@ void main() {
       Theme.of(tester.element(find.byType(Scaffold))).brightness,
       Brightness.dark,
     );
-    expect(
-      tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-      isTrue,
-    );
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.byTooltip('Обзор'), findsOneWidget);
     expect(find.byKey(const ValueKey('want-study-logo')), findsOneWidget);
     await _precacheLogo(tester);
     expect(find.text('Материал'), findsWidgets);
@@ -157,10 +163,13 @@ void main() {
 
     tester.view.physicalSize = const Size(1024, 720);
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-      isFalse,
-    );
+    expect(find.byType(NavigationRail), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(find.byTooltip('Материал')));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
     expect(tester.takeException(), isNull);
     tester.view.physicalSize = const Size(900, 720);
     await tester.pumpAndSettle();
@@ -220,6 +229,11 @@ void main() {
       find.byKey(const ValueKey('golden-root')),
       matchesGoldenFile('golden/lesson_editor_dark.png'),
     );
+    await tester.tap(find.widgetWithText(FilledButton, 'Добавить блок'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MenuItemButton), findsNWidgets(7));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     final editor = find.byType(TextField).first;
     await tester.enterText(editor, '# Обновлённый конспект');
@@ -247,6 +261,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Файлы').last);
     await tester.pumpAndSettle();
+    expect(find.byType(ChoiceChip), findsOneWidget);
     await tester.tap(find.text('Добавить файл'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -254,6 +269,8 @@ void main() {
     await tester.pumpAndSettle();
     tester.view.physicalSize = const Size(1440, 900);
     await tester.pumpAndSettle();
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(find.text('src/main.cpp'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -337,18 +354,37 @@ void main() {
     await _setSurface(tester, const Size(1024, 720));
     await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     await tester.tap(find.byIcon(Icons.hub_outlined));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final canvas = tester.getRect(
+      find.byKey(const ValueKey('concept-graph-canvas')),
+    );
+    for (final id in const ['concept-raii', 'concept-exception']) {
+      final node = tester.getRect(find.byKey(ValueKey(id)));
+      expect(
+        canvas.deflate(20).contains(node.center),
+        isTrue,
+        reason: '$id at $node is outside $canvas',
+      );
+    }
     await tester.tap(find.text('RAII').first);
     await tester.pumpAndSettle();
 
     expect(find.text('Псевдонимы'), findsOneWidget);
     expect(find.text('Привязки к блокам: 1'), findsOneWidget);
     expect(find.text('Связи'), findsOneWidget);
+    await expectLater(
+      find.byKey(const ValueKey('golden-root')),
+      matchesGoldenFile('golden/concept_dark.png'),
+    );
     tester.view.physicalSize = const Size(900, 720);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Добавить связь'));
+    final addRelation = find.byTooltip('Добавить связь');
+    await tester.ensureVisible(addRelation);
+    await tester.tap(addRelation);
     await tester.pumpAndSettle();
     expect(find.text('Новая связь'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -389,14 +425,22 @@ void main() {
     expect(find.text('Граф пока пуст'), findsOneWidget);
     await tester.tap(find.text('Добавить понятие'));
     await tester.pumpAndSettle();
-    final dialog = find.byType(AlertDialog);
-    final title = find
-        .descendant(of: dialog, matching: find.byType(TextField))
-        .first;
+    expect(tester.takeException(), isNull);
+    expect(find.text('Новое понятие'), findsOneWidget);
+    expect(find.byTooltip('Закрыть'), findsOneWidget);
+    final title = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Название',
+    );
     await tester.enterText(title, 'Единственное понятие');
     await tester.tap(find.text('Сохранить'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Новое понятие'), findsNothing);
+    expect(
+      repositories.facade.conceptController.state.selectedConcept?.title,
+      'Единственное понятие',
+    );
     expect(find.text('Единственное понятие'), findsWidgets);
     expect(find.text('Привязки к блокам: 0'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -515,10 +559,17 @@ void main() {
     await tester.tap(find.text('Построить предпросмотр'));
     await tester.pump();
     expect(find.text('Строится предпросмотр'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     snapshotResult.complete(snapshot);
     await tester.pumpAndSettle();
     expect(find.text('Предпросмотр готов'), findsOneWidget);
+    await expectLater(
+      find.byKey(const ValueKey('golden-root')),
+      matchesGoldenFile('golden/publication_dark.png'),
+    );
 
+    await tester.ensureVisible(find.text('Записать и отправить'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Записать и отправить'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Опубликовать'));

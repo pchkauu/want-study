@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
 abstract final class WantStudyColor {
-  static const background = Color(0xFF0B0D10);
-  static const surface = Color(0xFF14161A);
-  static const surfaceElevated = Color(0xFF1B1E24);
-  static const surfaceHighest = Color(0xFF222630);
-  static const outline = Color(0xFF2A2F3A);
-  static const text = Color(0xFFF2F4F8);
-  static const textMuted = Color(0xFF9097AA);
-  static const accent = Color(0xFF3454F5);
-  static const success = Color(0xFF72DF8B);
-  static const warning = Color(0xFFF2B35F);
-  static const error = Color(0xFFFF5D7A);
+  static const background = Color(0xFF090A0D);
+  static const surface = Color(0xFF101217);
+  static const surfaceElevated = Color(0xFF181B23);
+  static const surfaceHighest = Color(0xFF20242D);
+  static const outline = Color(0xFF2B303B);
+  static const text = Color(0xFFF4F1EB);
+  static const textMuted = Color(0xFF9BA1B2);
+  static const accent = Color(0xFF6152ED);
+  static const success = Color(0xFF74C991);
+  static const warning = Color(0xFFE0AA62);
+  static const error = Color(0xFFE16B80);
 }
 
 ThemeData buildWantStudyTheme() {
@@ -23,24 +23,24 @@ ThemeData buildWantStudyTheme() {
       ).copyWith(
         primary: WantStudyColor.accent,
         onPrimary: WantStudyColor.text,
-        primaryContainer: const Color(0xFF1D2E82),
+        primaryContainer: const Color(0xFF28225D),
         onPrimaryContainer: WantStudyColor.text,
-        secondary: const Color(0xFF8294FF),
+        secondary: const Color(0xFFA79FFF),
         onSecondary: WantStudyColor.background,
         tertiary: WantStudyColor.success,
         onTertiary: WantStudyColor.background,
-        tertiaryContainer: const Color(0xFF183B24),
-        onTertiaryContainer: const Color(0xFFB9F6C7),
+        tertiaryContainer: const Color(0xFF173323),
+        onTertiaryContainer: const Color(0xFFBCE8C8),
         surface: WantStudyColor.surface,
         surfaceContainerLowest: WantStudyColor.background,
-        surfaceContainerLow: const Color(0xFF111318),
+        surfaceContainerLow: const Color(0xFF0D0F13),
         surfaceContainer: WantStudyColor.surface,
         surfaceContainerHigh: WantStudyColor.surfaceElevated,
         surfaceContainerHighest: WantStudyColor.surfaceHighest,
         onSurface: WantStudyColor.text,
         onSurfaceVariant: WantStudyColor.textMuted,
         outline: WantStudyColor.outline,
-        outlineVariant: const Color(0xFF20242C),
+        outlineVariant: const Color(0xFF242933),
         error: WantStudyColor.error,
         onError: WantStudyColor.background,
         surfaceTint: Colors.transparent,
@@ -52,32 +52,34 @@ ThemeData buildWantStudyTheme() {
     scaffoldBackgroundColor: WantStudyColor.background,
     canvasColor: WantStudyColor.background,
     dividerColor: colorScheme.outlineVariant,
+    fontFamily: 'GolosText',
   );
   final textTheme = base.textTheme
       .copyWith(
         displaySmall: base.textTheme.displaySmall?.copyWith(
           color: WantStudyColor.text,
-          fontSize: 38,
+          fontSize: 46,
           fontWeight: FontWeight.w600,
-          letterSpacing: -1.4,
-          height: 1.05,
+          letterSpacing: -1.8,
+          height: 1.02,
         ),
         headlineMedium: base.textTheme.headlineMedium?.copyWith(
           color: WantStudyColor.text,
-          fontSize: 28,
+          fontSize: 30,
           fontWeight: FontWeight.w600,
-          letterSpacing: -0.8,
+          letterSpacing: -0.9,
+          height: 1.08,
         ),
         headlineSmall: base.textTheme.headlineSmall?.copyWith(
           color: WantStudyColor.text,
-          fontSize: 22,
+          fontSize: 23,
           fontWeight: FontWeight.w600,
           letterSpacing: -0.35,
         ),
         titleLarge: base.textTheme.titleLarge?.copyWith(
           color: WantStudyColor.text,
-          fontSize: 19,
-          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          fontWeight: FontWeight.w500,
         ),
         titleMedium: base.textTheme.titleMedium?.copyWith(
           color: WantStudyColor.text,
@@ -85,25 +87,31 @@ ThemeData buildWantStudyTheme() {
         ),
         bodyLarge: base.textTheme.bodyLarge?.copyWith(
           color: WantStudyColor.text,
-          height: 1.45,
+          fontSize: 16,
+          height: 1.5,
         ),
         bodyMedium: base.textTheme.bodyMedium?.copyWith(
           color: WantStudyColor.text,
-          height: 1.4,
+          fontSize: 14,
+          height: 1.45,
         ),
         bodySmall: base.textTheme.bodySmall?.copyWith(
           color: WantStudyColor.textMuted,
-          height: 1.35,
+          fontSize: 12.5,
+          height: 1.4,
         ),
         labelLarge: base.textTheme.labelLarge?.copyWith(
           color: WantStudyColor.text,
           fontWeight: FontWeight.w600,
         ),
       )
-      .apply(fontFamilyFallback: const ['SF Pro Display', 'Segoe UI Variable']);
+      .apply(
+        fontFamily: 'GolosText',
+        fontFamilyFallback: const ['SF Pro Display', 'Segoe UI Variable'],
+      );
 
   final roundedControl = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(12),
   );
   return base.copyWith(
     textTheme: textTheme,
@@ -116,11 +124,11 @@ ThemeData buildWantStudyTheme() {
       surfaceTintColor: Colors.transparent,
     ),
     navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: const Color(0xFF0E1014),
+      backgroundColor: WantStudyColor.surface,
       elevation: 0,
       indicatorColor: WantStudyColor.accent,
       indicatorShape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       selectedIconTheme: const IconThemeData(
         color: WantStudyColor.text,
@@ -139,16 +147,14 @@ ThemeData buildWantStudyTheme() {
       color: WantStudyColor.surface,
       elevation: 0,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: WantStudyColor.outline),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: WantStudyColor.surfaceElevated,
       surfaceTintColor: Colors.transparent,
       elevation: 18,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shadowColor: const Color(0xFF05060A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       titleTextStyle: textTheme.headlineSmall,
       contentTextStyle: textTheme.bodyMedium?.copyWith(
         color: WantStudyColor.textMuted,
@@ -162,23 +168,23 @@ ThemeData buildWantStudyTheme() {
       hintStyle: const TextStyle(color: WantStudyColor.textMuted),
       helperStyle: const TextStyle(color: WantStudyColor.textMuted),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: WantStudyColor.outline),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: WantStudyColor.outline),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: WantStudyColor.accent, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: WantStudyColor.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: WantStudyColor.error, width: 1.5),
       ),
     ),
@@ -219,28 +225,28 @@ ThemeData buildWantStudyTheme() {
         hoverColor: WantStudyColor.surfaceHighest,
         focusColor: WantStudyColor.accent.withValues(alpha: 0.24),
         highlightColor: WantStudyColor.accent.withValues(alpha: 0.18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     ),
     chipTheme: base.chipTheme.copyWith(
       backgroundColor: WantStudyColor.surfaceElevated,
       selectedColor: WantStudyColor.accent.withValues(alpha: 0.28),
       side: const BorderSide(color: WantStudyColor.outline),
-      shape: const StadiumBorder(),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       labelStyle: textTheme.labelMedium?.copyWith(color: WantStudyColor.text),
       secondaryLabelStyle: textTheme.labelMedium?.copyWith(
         color: WantStudyColor.text,
       ),
     ),
     dividerTheme: const DividerThemeData(
-      color: Color(0xFF20242C),
+      color: Color(0xFF242933),
       space: 1,
       thickness: 1,
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: WantStudyColor.surfaceElevated,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       textStyle: textTheme.bodyMedium,
     ),
     tabBarTheme: TabBarThemeData(
@@ -273,7 +279,7 @@ ThemeData buildWantStudyTheme() {
     ),
     textSelectionTheme: const TextSelectionThemeData(
       cursorColor: WantStudyColor.accent,
-      selectionColor: Color(0x663454F5),
+      selectionColor: Color(0x666152ED),
       selectionHandleColor: WantStudyColor.accent,
     ),
     pageTransitionsTheme: const PageTransitionsTheme(

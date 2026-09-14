@@ -65,61 +65,44 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
           builder: (context, state) {
             return LayoutBuilder(
               builder: (context, constraints) {
-                final extended = constraints.maxWidth >= 1200;
                 final disableAnimations = MediaQuery.disableAnimationsOf(
                   context,
                 );
                 return Scaffold(
-                  body: Row(
-                    children: [
-                      NavigationRail(
-                        extended: extended,
-                        minWidth: 88,
-                        minExtendedWidth: 244,
-                        groupAlignment: -0.58,
-                        selectedIndex: _selectedPage,
-                        onDestinationSelected: (value) {
-                          setState(() => _selectedPage = value);
-                        },
-                        leading: _NavigationBrand(extended: extended),
-                        destinations: const [
-                          NavigationRailDestination(
-                            icon: Icon(Icons.space_dashboard_outlined),
-                            selectedIcon: Icon(Icons.space_dashboard_rounded),
-                            label: Text('Обзор'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(Icons.menu_book_outlined),
-                            selectedIcon: Icon(Icons.menu_book_rounded),
-                            label: Text('Материал'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(Icons.hub_outlined),
-                            selectedIcon: Icon(Icons.hub_rounded),
-                            label: Text('Понятия'),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(Icons.publish_outlined),
-                            selectedIcon: Icon(Icons.publish_rounded),
-                            label: Text('Публикация'),
-                          ),
-                        ],
-                      ),
-                      const VerticalDivider(width: 1),
-                      Expanded(
-                        child: AnimatedSwitcher(
-                          duration: disableAnimations
-                              ? Duration.zero
-                              : const Duration(milliseconds: 200),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          child: KeyedSubtree(
-                            key: ValueKey(_selectedPage),
-                            child: _buildContent(context, state),
+                  body: StudyBackdrop(
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          bottom: 12,
+                          width: 76,
+                          child: _NavigationDock(
+                            selectedIndex: _selectedPage,
+                            onSelected: (value) {
+                              setState(() => _selectedPage = value);
+                            },
                           ),
                         ),
-                      ),
-                    ],
+                        Positioned(
+                          left: 100,
+                          top: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: AnimatedSwitcher(
+                            duration: disableAnimations
+                                ? Duration.zero
+                                : const Duration(milliseconds: 200),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            child: KeyedSubtree(
+                              key: ValueKey(_selectedPage),
+                              child: _buildContent(context, state),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -151,6 +134,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     return Column(
       children: [
         _StudyHeader(
+          selectedPage: _selectedPage,
           study: state.study,
           selectedStudyId: state.selectedStudyId,
           onSelected: (id) => _catalogController.add(
@@ -171,7 +155,10 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
         const Divider(height: 1),
         Expanded(
           child: switch (_selectedPage) {
-            0 => _DashboardView(progress: state.progress),
+            0 => _DashboardView(
+              study: selectedStudy!,
+              progress: state.progress,
+            ),
             1 => _MaterialView(
               tree: state.tree,
               onCreateSource: selectedStudy == null
@@ -292,9 +279,9 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     final result = await showStudyDialogV1<StudyV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: Text(existing == null ? 'Новое обучение' : 'Обучение'),
-          content: SizedBox(
+          child: SizedBox(
             width: 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -393,9 +380,9 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     final result = await showStudyDialogV1<LearningSourceV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: Text(existing == null ? 'Новый источник' : 'Источник'),
-          content: SizedBox(
+          child: SizedBox(
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -498,9 +485,9 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     final result = await showStudyDialogV1<SectionV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: Text(existing == null ? 'Новый раздел' : 'Раздел'),
-          content: TextField(
+          child: TextField(
             controller: title,
             autofocus: true,
             maxLength: 200,
@@ -558,9 +545,9 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     final result = await showStudyDialogV1<LessonV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => StudySideSheet(
           title: Text(existing == null ? 'Новый урок' : 'Урок'),
-          content: SizedBox(
+          child: SizedBox(
             width: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -675,44 +662,120 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
   }
 }
 
-final class _NavigationBrand extends StatelessWidget {
-  final bool extended;
+final class _NavigationDock extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
 
-  const _NavigationBrand({required this.extended});
+  const _NavigationDock({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: extended ? 220 : 64,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 14, bottom: 30),
-        child: Row(
-          mainAxisAlignment: extended
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
-          children: [
-            Image.asset(
+    final scheme = Theme.of(context).colorScheme;
+    const destination = [
+      (Icons.space_dashboard_outlined, Icons.space_dashboard_rounded, 'Обзор'),
+      (Icons.menu_book_outlined, Icons.menu_book_rounded, 'Материал'),
+      (Icons.hub_outlined, Icons.hub_rounded, 'Понятия'),
+      (Icons.publish_outlined, Icons.publish_rounded, 'Публикация'),
+    ];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Image.asset(
               'asset/logo_512px.png',
               package: 'study',
               key: const ValueKey('want-study-logo'),
-              width: 44,
-              height: 44,
+              width: 46,
+              height: 46,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
-              excludeFromSemantics: true,
+              semanticLabel: 'Want Study',
             ),
-            if (extended) ...[
-              const SizedBox(width: 13),
-              Flexible(
-                child: Text(
-                  'Want Study',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-            ],
+          ),
+          const Spacer(),
+          for (var index = 0; index < destination.length; index++) ...[
+            _DockButton(
+              selected: selectedIndex == index,
+              icon: selectedIndex == index
+                  ? destination[index].$2
+                  : destination[index].$1,
+              label: destination[index].$3,
+              onPressed: () => onSelected(index),
+            ),
+            if (index != destination.length - 1) const SizedBox(height: 10),
           ],
+          const Spacer(),
+          const SizedBox(height: 58),
+        ],
+      ),
+    );
+  }
+}
+
+final class _DockButton extends StatelessWidget {
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _DockButton({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: AnimatedContainer(
+          duration: disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: selected ? scheme.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? scheme.primary : Colors.transparent,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onPressed,
+              child: Icon(
+                icon,
+                size: 22,
+                color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -720,6 +783,7 @@ final class _NavigationBrand extends StatelessWidget {
 }
 
 final class _StudyHeader extends StatelessWidget {
+  final int selectedPage;
   final List<StudyV1> study;
   final String? selectedStudyId;
   final ValueChanged<String> onSelected;
@@ -728,6 +792,7 @@ final class _StudyHeader extends StatelessWidget {
   final VoidCallback? onArchive;
 
   const _StudyHeader({
+    required this.selectedPage,
     required this.study,
     required this.selectedStudyId,
     required this.onSelected,
@@ -742,88 +807,158 @@ final class _StudyHeader extends StatelessWidget {
         .where((item) => item.id == selectedStudyId)
         .firstOrNull;
     final theme = Theme.of(context);
+    final wide = MediaQuery.sizeOf(context).width >= 1200;
+    final pageTitle = const [
+      'Обзор',
+      'Материал',
+      'Понятия',
+      'Публикация',
+    ][selectedPage];
     return Container(
-      constraints: const BoxConstraints(minHeight: 82),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-      color: theme.colorScheme.surfaceContainerLowest,
+      constraints: const BoxConstraints(minHeight: 96),
+      padding: const EdgeInsets.fromLTRB(28, 14, 28, 12),
       child: Row(
         children: [
-          Expanded(
+          SizedBox(
+            width: wide ? 220 : 190,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedStudyId,
-                    isExpanded: MediaQuery.sizeOf(context).width < 960,
-                    isDense: true,
-                    borderRadius: BorderRadius.circular(14),
-                    style: theme.textTheme.titleLarge,
-                    icon: const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: Icon(Icons.keyboard_arrow_down_rounded),
-                    ),
-                    items: [
-                      for (final item in study)
-                        DropdownMenuItem(
-                          value: item.id,
-                          child: Text(
-                            item.isArchived
-                                ? '${item.title} (архив)'
-                                : item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        onSelected(value);
-                      }
-                    },
-                  ),
+                Text('Рабочее пространство', style: theme.textTheme.bodySmall),
+                const SizedBox(height: 4),
+                Text(
+                  pageTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.headlineSmall,
                 ),
-                if (selected?.goal.isNotEmpty ?? false) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    selected!.goal,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
               ],
             ),
           ),
           const SizedBox(width: 18),
-          IconButton(
-            tooltip: 'Изменить обучение',
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: selected?.isArchived ?? false
-                ? 'Восстановить обучение'
-                : 'Архивировать обучение',
-            onPressed: onArchive,
-            icon: Icon(
-              selected?.isArchived ?? false
-                  ? Icons.unarchive_outlined
-                  : Icons.archive_outlined,
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedStudyId,
+                        isExpanded: true,
+                        isDense: true,
+                        borderRadius: BorderRadius.circular(12),
+                        style: theme.textTheme.titleMedium,
+                        icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                        items: [
+                          for (final item in study)
+                            DropdownMenuItem(
+                              value: item.id,
+                              child: Text(
+                                item.isArchived
+                                    ? '${item.title} (архив)'
+                                    : item.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) onSelected(value);
+                        },
+                      ),
+                    ),
+                    if (selected?.goal.isNotEmpty ?? false) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        selected!.goal,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add),
-            label: const Text('Новое обучение'),
-          ),
+          const SizedBox(width: 14),
+          if (wide) ...[
+            IconButton(
+              tooltip: 'Изменить обучение',
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: selected?.isArchived ?? false
+                  ? 'Восстановить обучение'
+                  : 'Архивировать обучение',
+              onPressed: onArchive,
+              icon: Icon(
+                selected?.isArchived ?? false
+                    ? Icons.unarchive_outlined
+                    : Icons.archive_outlined,
+              ),
+            ),
+            const SizedBox(width: 6),
+            FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add),
+              label: const Text('Новое обучение'),
+            ),
+          ] else
+            PopupMenuButton<_StudyAction>(
+              tooltip: 'Действия с обучением',
+              onSelected: (action) {
+                switch (action) {
+                  case _StudyAction.create:
+                    onCreate();
+                  case _StudyAction.edit:
+                    onEdit?.call();
+                  case _StudyAction.archive:
+                    onArchive?.call();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: _StudyAction.create,
+                  child: Text('Новое обучение'),
+                ),
+                PopupMenuItem(
+                  value: _StudyAction.edit,
+                  enabled: onEdit != null,
+                  child: const Text('Изменить обучение'),
+                ),
+                PopupMenuItem(
+                  value: _StudyAction.archive,
+                  enabled: onArchive != null,
+                  child: Text(
+                    selected?.isArchived ?? false
+                        ? 'Восстановить обучение'
+                        : 'Архивировать обучение',
+                  ),
+                ),
+              ],
+              icon: const Icon(Icons.more_horiz_rounded),
+            ),
         ],
       ),
     );
   }
 }
+
+enum _StudyAction { create, edit, archive }
 
 final class _EmptyStudyView extends StatelessWidget {
   final VoidCallback onCreate;
@@ -841,9 +976,10 @@ final class _EmptyStudyView extends StatelessWidget {
 }
 
 final class _DashboardView extends StatelessWidget {
+  final StudyV1 study;
   final StudyProgressV1? progress;
 
-  const _DashboardView({required this.progress});
+  const _DashboardView({required this.study, required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -877,10 +1013,19 @@ final class _DashboardView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const StudySectionHeader(
-                    title: 'Прогресс',
-                    description:
-                        'Материал и домашняя работа считаются независимо.',
+                  Text(
+                    'Текущий фокус',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  StudySectionHeader(
+                    title: study.title,
+                    description: study.goal.isEmpty
+                        ? 'Материал и домашняя работа считаются независимо.'
+                        : study.goal,
                   ),
                   const SizedBox(height: 24),
                   if (compact)
@@ -938,13 +1083,14 @@ final class _ProgressPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final foreground = primary ? const Color(0xFFF2F4F8) : scheme.onSurface;
-    final muted = primary ? const Color(0xFFCFD5FF) : scheme.onSurfaceVariant;
+    final foreground = primary ? scheme.onPrimaryContainer : scheme.onSurface;
+    final muted = primary ? scheme.secondary : scheme.onSurfaceVariant;
     final fraction = progress.fraction.clamp(0.0, 1.0);
     final percent = (fraction * 100).round();
     return StudySurface(
-      color: primary ? scheme.primary : scheme.surface,
-      borderColor: primary ? scheme.primary : scheme.outlineVariant,
+      color: primary
+          ? scheme.primaryContainer.withValues(alpha: 0.92)
+          : scheme.surface,
       radius: 24,
       padding: const EdgeInsets.all(28),
       child: Column(
@@ -995,7 +1141,7 @@ final class _ProgressPanel extends StatelessWidget {
             value: fraction,
             minHeight: 6,
             borderRadius: BorderRadius.circular(999),
-            color: primary ? foreground : scheme.primary,
+            color: primary ? scheme.secondary : scheme.primary,
             backgroundColor: primary
                 ? foreground.withValues(alpha: 0.18)
                 : scheme.surfaceContainerHighest,
@@ -1540,7 +1686,7 @@ final class _LessonWorkspace extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: lesson.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, __) => const Divider(),
                     itemBuilder: (context, index) {
                       final item = lesson[index];
                       return _LessonRow(
@@ -1584,10 +1730,11 @@ final class _LessonRow extends StatelessWidget {
     return Opacity(
       opacity: lesson.isArchived ? 0.55 : 1,
       child: Material(
-        color: theme.colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
+          hoverColor: theme.colorScheme.surfaceContainerHigh,
           onTap: onOpen,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 8, 14),
