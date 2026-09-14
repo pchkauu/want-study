@@ -1,0 +1,42 @@
+name: want_study_desktop
+description: Desktop shell for Want Study.
+publish_to: none
+version: 1.0.0+1
+resolution: workspace
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  auto_route: ^11.1.0
+  bloc: ^9.2.1
+  bloc_concurrency: ^0.3.0
+  crypto: ^3.0.6
+  dio: ^5.11.1
+  file_selector: ^1.0.4
+  fixnum: ^1.1.1
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  get_it: ^9.2.1
+  grpc: ^5.1.0
+  injectable: ^3.0.0
+  launch_mode: ^0.2.0
+  observatory: 3.0.1
+  path: ^1.9.1
+  protobuf: ^6.1.0
+  study:
+    path: ../../package/study
+  talker_bloc_effects: ^0.1.0
+
+dev_dependencies:
+  auto_route_generator: ^10.6.0
+  build_runner: ^2.16.1
+  flutter_test:
+    sdk: flutter
+  injectable_generator: ^3.1.3
+  mocktail: ^1.0.4
+  surf_lint_rules: ^4.0.0
+
+flutter:
+  uses-material-design: true

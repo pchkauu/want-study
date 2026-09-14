@@ -1,0 +1,12 @@
+.git
+.dart_tool
+.fvm
+.tool
+.idea
+app
+build
+package
+**/.dart_tool
+**/.idea
+**/build
+**/coverage

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.27.1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: 1.57.2
+      - run: dart pub global activate fvm 3.2.1
+      - run: fvm install 3.47.4
+      - run: fvm flutter pub get
+      - run: make proto-check
+
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: want_study_test
+          POSTGRES_USER: want_study
+          POSTGRES_PASSWORD: want_study_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U want_study -d want_study_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      WANT_STUDY_TEST_DATABASE_URL: postgres://want_study:want_study_local@127.0.0.1:5432/want_study_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.27.1
+          cache-dependency-path: service/api/go.sum
+      - run: go test ./...
+        working-directory: service/api
+
+  flutter:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.4
+          channel: stable
+          cache: true
+      - run: dart pub global activate fvm 3.2.1
+      - run: fvm install 3.47.4
+      - run: fvm flutter pub get
+      - run: fvm flutter analyze
+      - run: make test-flutter
+      - run: fvm flutter build macos --release
+        working-directory: app/desktop

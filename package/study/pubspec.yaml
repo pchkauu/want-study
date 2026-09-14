@@ -1,0 +1,31 @@
+name: study
+description: Want Study feature package.
+version: 1.0.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.13.3
+  flutter: ">=3.47.4"
+
+dependencies:
+  bloc: ^9.2.1
+  bloc_concurrency: ^0.3.0
+  bloc_effects: ^2.1.0
+  domain_error: ^3.0.0
+  equatable: ^2.0.7
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  flutter_markdown_plus: ^1.0.5
+  get_it: ^9.2.1
+  graphview: ^1.2.0
+  package_context: ^2.2.0
+  uuid: ^4.5.2
+
+dev_dependencies:
+  bloc_test: ^10.0.0
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.4
+  surf_lint_rules: ^4.0.0

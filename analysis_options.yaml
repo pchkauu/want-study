@@ -1,0 +1,15 @@
+include: package:surf_lint_rules/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - "**/*.pb.dart"
+    - "**/*.pbenum.dart"
+    - "**/*.pbgrpc.dart"
+    - "**/*.pbjson.dart"
+    - "**/build/**"
+    - "**/ephemeral/**"
+
+linter:
+  rules:
+    public_member_api_docs: false
+    always_use_package_imports: false
