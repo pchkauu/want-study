@@ -124,7 +124,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
         state.loadState == PublicationLoadStateV2.publishing;
     final (statusLabel, statusIcon, statusColor) = _publicationStatus(
       context,
-      state.loadState,
+      state,
     );
     return StudySurface(
       child: SingleChildScrollView(
@@ -158,25 +158,25 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
             const SizedBox(height: 20),
             _PublicationSteps(state: state),
             const SizedBox(height: 22),
-            FilledButton.icon(
-              onPressed: busy
-                  ? null
-                  : () => _controller.add(
-                      PublicationPreviewRequestedV2(widget.study),
-                    ),
-              icon: const Icon(Icons.preview_outlined),
-              label: const Text('Построить предпросмотр'),
-            ),
             if (state.loadState == PublicationLoadStateV2.pushFailed) ...[
-              const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () =>
                     _controller.add(const PublicationPushRetriedV2()),
                 icon: const Icon(Icons.cloud_upload_outlined),
                 label: const Text('Повторить push'),
               ),
-            ],
-            if (state.preview != null) ...[
+            ] else
+              FilledButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => _controller.add(
+                        PublicationPreviewRequestedV2(widget.study),
+                      ),
+                icon: const Icon(Icons.preview_outlined),
+                label: const Text('Построить предпросмотр'),
+              ),
+            if (state.loadState == PublicationLoadStateV2.ready &&
+                state.preview != null) ...[
               const SizedBox(height: 22),
               TextField(
                 controller: _message,
@@ -246,10 +246,18 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
 
   (String, IconData, Color) _publicationStatus(
     BuildContext context,
-    PublicationLoadStateV2 state,
+    PublicationStateV2 state,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    return switch (state) {
+    if (state.loadState == PublicationLoadStateV2.failed &&
+        state.failure == StudyFailureKindV1.conflict) {
+      return (
+        'Данные изменились — обновите предпросмотр',
+        Icons.refresh_rounded,
+        studyWarningColor,
+      );
+    }
+    return switch (state.loadState) {
       PublicationLoadStateV2.initial => (
         'Готово к проверке',
         Icons.shield_outlined,
@@ -321,6 +329,8 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   void _onEffect(BuildContext _, PublicationEffectV2 effect) {
     if (!mounted || !_isActive) return;
     final message = switch (effect) {
+      PublicationFailureEffectV2(failure: StudyFailureKindV1.conflict) =>
+        'Данные изменились. Постройте предпросмотр заново.',
       PublicationFailureEffectV2() => 'Публикация не выполнена',
       PublicationSuccessEffectV2() => 'Изменения опубликованы',
     };

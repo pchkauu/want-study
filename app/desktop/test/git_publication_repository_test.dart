@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:domain_error/domain_error.dart';
+import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mocktail/mocktail.dart';
@@ -12,6 +13,39 @@ import 'package:want_study_desktop/src/infrastructure/grpc_repository.dart';
 import 'package:want_study_desktop/src/proto/wantstudy/v1/export.pbgrpc.dart';
 
 void main() {
+  test('renders latest snapshot when study revision is stale', () async {
+    final service = _ExportService();
+    final server = Server.create(services: [service]);
+    await server.serve(address: InternetAddress.loopbackIPv4, port: 0);
+    final channel = ClientChannel(
+      InternetAddress.loopbackIPv4.address,
+      port: server.port!,
+      options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
+    );
+    addTearDown(() async {
+      await channel.shutdown();
+      await server.shutdown();
+    });
+    const errorReporter = _ErrorReporter();
+    final publication = GitPublicationRepositoryV2(
+      GrpcExportGatewayV1(ExportServiceClient(channel), errorReporter),
+      _StudyRepositoryMock(),
+      errorReporter,
+    );
+
+    final snapshot = await publication.renderStudyExport(
+      StudyV1(
+        id: 'study-id',
+        title: 'Study',
+        localRepositoryPath: '/unused',
+        contentRevision: 31,
+      ),
+    );
+
+    expect(snapshot.studyRevision, 32);
+    expect(service.request?.hasExpectedContentRevision(), isFalse);
+  });
+
   test('recognizes only the verified cpp-study legacy snapshot', () {
     final hashes = {
       'README.md':
@@ -33,7 +67,7 @@ void main() {
     );
   });
 
-  test('adopts a clean tracked README and preserves local drafts', () async {
+  test('protects files, rejects stale snapshots, and retries push', () async {
     final temporary = await Directory.systemTemp.createTemp(
       'want-study-git-test-',
     );
@@ -105,9 +139,13 @@ void main() {
       localRepositoryPath: repository.path,
       contentRevision: 2,
     );
+    var currentStudy = study;
     final studyRepository = _StudyRepositoryMock();
     when(() => studyRepository.getMaterialTree(study: study))
-        .thenAnswer((_) async => MaterialTreeV1(study: study));
+        .thenAnswer((_) async => MaterialTreeV1(study: currentStudy));
+    when(
+      () => studyRepository.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) async => [currentStudy]);
     const errorReporter = _ErrorReporter();
     final publication = GitPublicationRepositoryV2(
       GrpcExportGatewayV1(ExportServiceClient(channel), errorReporter),
@@ -134,6 +172,23 @@ void main() {
     expect(preview.diff, contains('# Study'));
     expect(preview.diff, isNot(contains(temporary.path)));
 
+    currentStudy = study.copyWith(contentRevision: 3);
+    await expectLater(
+      publication.publish(
+        study: study,
+        snapshot: snapshot,
+        commit: PublicationCommitV1(
+          message: 'docs(study): reject stale snapshot',
+        ),
+      ),
+      throwsA(isA<ConflictErrorV1>()),
+    );
+    expect(
+      await File('${repository.path}/README.md').readAsString(),
+      initialReadme,
+    );
+
+    currentStudy = study;
     final published = await publication.publish(
       study: study,
       snapshot: snapshot,
@@ -160,10 +215,93 @@ void main() {
       snapshot: snapshot,
     );
     expect(unchanged.changedPath, isEmpty);
+
+    final updatedReadme = utf8.encode('# Updated study\n');
+    final updatedManifest = utf8.encode(
+      '${const JsonEncoder.withIndent('  ').convert({
+        'formatVersion': 1,
+        'studyId': 'study-id',
+        'studyRevision': 3,
+        'files': [
+          {'path': 'README.md', 'sha256': sha256.convert(updatedReadme).toString()},
+        ],
+      })}\n',
+    );
+    final updatedSnapshot = ExportSnapshotV1(
+      studyId: 'study-id',
+      studyRevision: 3,
+      file: [
+        ExportFileV1(
+          path: '.want-study/manifest.json',
+          content: updatedManifest,
+          sha256: sha256.convert(updatedManifest).toString(),
+        ),
+        ExportFileV1(
+          path: 'README.md',
+          content: updatedReadme,
+          sha256: sha256.convert(updatedReadme).toString(),
+        ),
+      ],
+    );
+    currentStudy = study.copyWith(contentRevision: 3);
+    await publication.preview(study: currentStudy, snapshot: updatedSnapshot);
+    final hook = File('${remote.path}/hooks/pre-receive');
+    await hook.writeAsString('#!/bin/sh\nexit 1\n');
+    final chmod = await Process.run('/bin/chmod', ['+x', hook.path]);
+    expect(chmod.exitCode, 0);
+
+    final pushFailed = await publication.publish(
+      study: currentStudy,
+      snapshot: updatedSnapshot,
+      commit: PublicationCommitV1(message: 'docs(study): update snapshot'),
+    );
+    expect(pushFailed.state, PublicationStateV1.pushFailed);
+    expect(
+      await _git(temporary.path, [
+        '--git-dir',
+        remote.path,
+        'show',
+        'main:README.md',
+      ]),
+      '# Study\n',
+    );
+
+    await hook.delete();
+    final retried = await publication.retryPush(pushFailed);
+    expect(retried.state, PublicationStateV1.published);
+    expect(retried.commitSha, pushFailed.commitSha);
+    expect(
+      await _git(temporary.path, [
+        '--git-dir',
+        remote.path,
+        'show',
+        'main:README.md',
+      ]),
+      '# Updated study\n',
+    );
   });
 }
 
 final class _StudyRepositoryMock extends Mock implements StudyRepositoryV2 {}
+
+final class _ExportService extends ExportServiceBase {
+  RenderStudyExportRequest? request;
+
+  @override
+  Stream<ExportChunk> renderStudyExport(
+    ServiceCall call,
+    RenderStudyExportRequest request,
+  ) async* {
+    this.request = request;
+    yield ExportChunk(
+      header: ExportHeader(
+        studyId: request.studyId,
+        studyRevision: Int64(32),
+        totalBytes: Int64.ZERO,
+      ),
+    );
+  }
+}
 
 final class _ErrorReporter implements StudyErrorReporterV2 {
   const _ErrorReporter();

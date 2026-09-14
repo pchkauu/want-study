@@ -945,15 +945,17 @@ void main() {
     final snapshot = _snapshot();
     final snapshotResult = Completer<ExportSnapshotV1>();
     final publishResult = Completer<PublicationV1>();
-    final retryResult = Completer<PublicationV1>();
+    final firstRetry = Completer<PublicationV1>();
+    final secondRetry = Completer<PublicationV1>();
     var renderCount = 0;
+    var retryCount = 0;
     when(() => repositories.publication.renderStudyExport(_study))
         .thenAnswer((_) {
           renderCount++;
           if (renderCount == 1) {
             return snapshotResult.future;
           }
-          throw const UnavailableErrorV1();
+          throw const ConflictErrorV1('study/study-id/content');
         });
     when(
       () => repositories.publication.preview(study: _study, snapshot: snapshot),
@@ -968,10 +970,14 @@ void main() {
       ),
     ).thenAnswer((_) => publishResult.future);
     when(() => repositories.publication.retryPush(_pushFailedPublication()))
-        .thenAnswer((_) => retryResult.future);
+        .thenAnswer((_) {
+          retryCount++;
+          return retryCount == 1 ? firstRetry.future : secondRetry.future;
+        });
     await _setSurface(tester, const Size(1024, 720));
     await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
     await tester.pumpAndSettle();
+    await _precacheLogo(tester);
 
     await tester.tap(find.byIcon(Icons.publish_outlined));
     await tester.pumpAndSettle();
@@ -998,16 +1004,29 @@ void main() {
     publishResult.complete(_pushFailedPublication());
     await tester.pumpAndSettle();
     expect(find.text('Push не выполнен'), findsOneWidget);
+    expect(find.text('Построить предпросмотр'), findsNothing);
+    expect(find.text('Записать и отправить'), findsNothing);
 
     await tester.tap(find.text('Повторить push'));
     await tester.pump();
-    retryResult.complete(_publishedPublication());
+    firstRetry.completeError(const PublicationErrorV1('push_failed'));
+    await tester.pumpAndSettle();
+    expect(find.text('Push не выполнен'), findsOneWidget);
+    expect(find.text('Повторить push'), findsOneWidget);
+
+    await tester.tap(find.text('Повторить push'));
+    await tester.pump();
+    secondRetry.complete(_publishedPublication());
     await tester.pumpAndSettle();
     expect(find.text('Опубликовано'), findsOneWidget);
+    expect(find.text('Записать и отправить'), findsNothing);
 
     await tester.tap(find.text('Построить предпросмотр'));
     await tester.pumpAndSettle();
-    expect(find.text('Проверка не выполнена'), findsOneWidget);
+    expect(
+      find.text('Данные изменились — обновите предпросмотр'),
+      findsOneWidget,
+    );
     for (final size in const [Size(900, 720), Size(1440, 900)]) {
       tester.view.physicalSize = size;
       await tester.pumpAndSettle();

@@ -40,6 +40,10 @@ final class PublicationControllerV2
     PublicationPreviewRequestedV2 event,
     Emitter<PublicationStateV2> emit,
   ) async {
+    if (state.loadState == PublicationLoadStateV2.publishing ||
+        state.loadState == PublicationLoadStateV2.pushFailed) {
+      return;
+    }
     emit(
       state.copyWith(
         loadState: PublicationLoadStateV2.preparing,
@@ -70,6 +74,7 @@ final class PublicationControllerV2
     PublicationConfirmedV2 event,
     Emitter<PublicationStateV2> emit,
   ) async {
+    if (state.loadState != PublicationLoadStateV2.ready) return;
     final study = state.study;
     final snapshot = state.snapshot;
     if (study == null || snapshot == null) return;
@@ -92,6 +97,7 @@ final class PublicationControllerV2
     PublicationPushRetriedV2 event,
     Emitter<PublicationStateV2> emit,
   ) async {
+    if (state.loadState != PublicationLoadStateV2.pushFailed) return;
     final publication = state.publication;
     if (publication == null) return;
     emit(state.copyWith(loadState: PublicationLoadStateV2.publishing));
@@ -99,8 +105,12 @@ final class PublicationControllerV2
       params: PublicationRetryPushParamsV1(publication),
     );
     await result.fold(
-      (error) =>
-          _emitFailure(error, emit, 'PublicationControllerV2.retryPush():'),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'PublicationControllerV2.retryPush():',
+        loadState: PublicationLoadStateV2.pushFailed,
+      ),
       (value) async => _emitPublication(value.publication, emit),
     );
   }
@@ -127,8 +137,9 @@ final class PublicationControllerV2
   Future<void> _emitFailure(
     DomainError error,
     Emitter<PublicationStateV2> emit,
-    String operation,
-  ) async {
+    String operation, {
+    PublicationLoadStateV2 loadState = PublicationLoadStateV2.failed,
+  }) async {
     await _reporter.reportDomainError(
       context: StudyErrorContextV1(
         operation: operation,
@@ -138,9 +149,12 @@ final class PublicationControllerV2
       stackTrace: error.stackTrace ?? StackTrace.current,
     );
     final failure = studyFailureKindV1(error);
+    final invalidatePreview = failure == StudyFailureKindV1.conflict;
     emit(
       state.copyWith(
-        loadState: PublicationLoadStateV2.failed,
+        loadState: loadState,
+        snapshot: invalidatePreview ? () => null : null,
+        preview: invalidatePreview ? () => null : null,
         failure: () => failure,
       ),
     );

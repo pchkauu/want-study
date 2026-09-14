@@ -15,6 +15,9 @@ final class _LessonRepository extends Mock
 final class _KnowledgeRepository extends Mock
     implements KnowledgeRepositoryV2 {}
 
+final class _PublicationRepository extends Mock
+    implements StudyPublicationRepositoryV2 {}
+
 final class _RepositoryPicker extends Mock implements RepositoryPickerService {}
 
 final class _ErrorReporter extends Mock implements StudyErrorReporterV2 {}
@@ -444,6 +447,106 @@ void main() {
       ),
     ).called(1);
   });
+
+  test(
+    'publication conflict invalidates preview before rebuilding it',
+    () async {
+      final publicationRepository = _PublicationRepository();
+      final study = _study();
+      final staleSnapshot = ExportSnapshotV1(
+        studyId: study.id,
+        studyRevision: 31,
+        file: const [],
+      );
+      final currentSnapshot = ExportSnapshotV1(
+        studyId: study.id,
+        studyRevision: 32,
+        file: const [],
+      );
+      final stalePreview = PublicationPreviewV1(
+        studyId: study.id,
+        studyRevision: 31,
+        diff: 'stale',
+        changedPath: const [],
+      );
+      final currentPreview = PublicationPreviewV1(
+        studyId: study.id,
+        studyRevision: 32,
+        diff: 'current',
+        changedPath: const [],
+      );
+      var renderCount = 0;
+      when(() => publicationRepository.renderStudyExport(study)).thenAnswer((
+        _,
+      ) {
+        renderCount++;
+        return Future.value(renderCount == 1 ? staleSnapshot : currentSnapshot);
+      });
+      when(
+        () => publicationRepository.preview(
+          study: study,
+          snapshot: staleSnapshot,
+        ),
+      ).thenAnswer((_) async => stalePreview);
+      when(
+        () => publicationRepository.preview(
+          study: study,
+          snapshot: currentSnapshot,
+        ),
+      ).thenAnswer((_) async => currentPreview);
+      when(
+        () => publicationRepository.publish(
+          study: study,
+          snapshot: staleSnapshot,
+          commit: PublicationCommitV1(message: 'docs(study): publish'),
+        ),
+      ).thenThrow(const ConflictErrorV1('study/study-id/content'));
+      final controller = PublicationControllerV2(
+        PublicationUseCase(publicationRepository, executor),
+        reporter,
+      );
+      addTearDown(controller.close);
+
+      controller.add(PublicationPreviewRequestedV2(study));
+      await controller.stream.firstWhere(
+        (state) => state.loadState == PublicationLoadStateV2.ready,
+      );
+      controller.add(
+        PublicationConfirmedV2(
+          PublicationCommitV1(message: 'docs(study): publish'),
+        ),
+      );
+      final failed = await controller.stream.firstWhere(
+        (state) => state.loadState == PublicationLoadStateV2.failed,
+      );
+
+      expect(failed.failure, StudyFailureKindV1.conflict);
+      expect(failed.snapshot, isNull);
+      expect(failed.preview, isNull);
+
+      controller.add(
+        PublicationConfirmedV2(
+          PublicationCommitV1(message: 'docs(study): publish'),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      verify(
+        () => publicationRepository.publish(
+          study: study,
+          snapshot: staleSnapshot,
+          commit: PublicationCommitV1(message: 'docs(study): publish'),
+        ),
+      ).called(1);
+
+      controller.add(PublicationPreviewRequestedV2(study));
+      final rebuilt = await controller.stream.firstWhere(
+        (state) =>
+            state.loadState == PublicationLoadStateV2.ready &&
+            state.snapshot?.studyRevision == 32,
+      );
+      expect(rebuilt.preview?.diff, 'current');
+    },
+  );
 
   test('catalog init shares one in-flight load', () async {
     final studyRepository = _StudyRepository();

@@ -67,7 +67,7 @@ final class GitPublicationRepositoryV2 implements StudyPublicationRepositoryV2 {
 
   @override
   Future<ExportSnapshotV1> renderStudyExport(StudyV1 study) =>
-      _export.render(study.id, expectedContentRevision: study.contentRevision);
+      _export.render(study.id);
 
   @override
   Future<PublicationPreviewV1> preview({
