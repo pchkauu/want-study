@@ -65,6 +65,7 @@ void main() {
     );
     registerFallbackValue(_note());
     registerFallbackValue(_workspace().task.single);
+    registerFallbackValue(_workspace().file.single);
     registerFallbackValue(_conceptGraph().concept.first);
     registerFallbackValue(ConceptSearchV1());
   });
@@ -229,9 +230,10 @@ void main() {
       find.byKey(const ValueKey('golden-root')),
       matchesGoldenFile('golden/lesson_editor_dark.png'),
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Добавить блок'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Команды'));
     await tester.pumpAndSettle();
-    expect(find.byType(MenuItemButton), findsNWidgets(7));
+    expect(find.text('Тип блока'), findsOneWidget);
+    expect(find.text('Markdown'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -249,7 +251,13 @@ void main() {
     await tester.tap(find.text('Домашняя работа').last);
     await tester.pumpAndSettle();
     expect(find.text('Срок: 20.09.2026'), findsOneWidget);
-    expect(find.text('Решение'), findsOneWidget);
+    await tester.tap(find.text('Задание 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Редактирование задания'), findsOneWidget);
+    await expectLater(
+      find.byKey(const ValueKey('golden-root')),
+      matchesGoldenFile('golden/lesson_homework_dark.png'),
+    );
     expect(tester.takeException(), isNull);
 
     tester.view.physicalSize = const Size(900, 720);
@@ -261,16 +269,327 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Файлы').last);
     await tester.pumpAndSettle();
-    expect(find.byType(ChoiceChip), findsOneWidget);
+    expect(find.text('src/main.cpp'), findsWidgets);
     await tester.tap(find.text('Добавить файл'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
+    final fileEditor = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == 'Содержимое UTF-8 файла',
+    );
+    await tester.enterText(fileEditor, 'int main() { return 1; }');
+    await tester.pump();
+    expect(find.text('Изменён'), findsOneWidget);
+    await tester.tap(find.text('Сбросить'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(fileEditor).controller?.text,
+      'int main() { return 0; }',
+    );
     tester.view.physicalSize = const Size(1440, 900);
     await tester.pumpAndSettle();
-    expect(find.byType(ChoiceChip), findsNothing);
     expect(find.text('src/main.cpp'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson document switches active block and reading mode', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest(
+      config: const Config(autosaveDelay: Duration(days: 1)),
+    );
+    _stubCatalog(repositories.study);
+    final second = _note().copyWith(
+      id: 'block-2',
+      type: NoteBlockTypeV1.summary,
+      markdown: '## Слабая гарантия\n\nСостояние объекта остаётся корректным.',
+      position: 1,
+    );
+    when(
+      () => repositories.lesson.getWorkspace(_studyingLesson),
+    ).thenAnswer((_) async => _workspace().copyWith(block: [_note(), second]));
+    await _setSurface(tester, const Size(1440, 900));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Структура'), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-editor-block-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-editor-block-2')), findsNothing);
+    await tester.tap(find.text('2. Итог'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('note-editor-block-2')), findsOneWidget);
+
+    await tester.tap(find.text('Чтение'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('note-editor-block-2')), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Команды'), findsNothing);
+    expect(find.text('Добавить блок'), findsNothing);
+    expect(find.text('Слабая гарантия'), findsWidgets);
+    await expectLater(
+      find.byKey(const ValueKey('golden-root')),
+      matchesGoldenFile('golden/lesson_read_dark.png'),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('empty document creates and focuses the first block', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    NoteBlockV1? created;
+    var workspaceRead = 0;
+    when(() => repositories.lesson.getWorkspace(_studyingLesson)).thenAnswer((
+      _,
+    ) async {
+      workspaceRead++;
+      return _workspace().copyWith(
+        block: workspaceRead == 1 || created == null ? const [] : [created!],
+      );
+    });
+    when(() => repositories.lesson.createBlock(any())).thenAnswer((call) async {
+      created = call.positionalArguments.single as NoteBlockV1;
+      return created!;
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Начните конспект'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('empty-note-document')),
+        matching: find.widgetWithText(FilledButton, 'Добавить блок'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editor = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText ==
+              'Пишите Markdown. «/» откроет команды.',
+    );
+    expect(editor, findsOneWidget);
+    expect(tester.widget<TextField>(editor).focusNode?.hasFocus, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deleting the active block selects its nearest neighbour', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest(
+      config: const Config(autosaveDelay: Duration(days: 1)),
+    );
+    _stubCatalog(repositories.study);
+    final second = _note().copyWith(
+      id: 'block-2',
+      type: NoteBlockTypeV1.claim,
+      markdown: '## Второй блок',
+      position: 1,
+    );
+    final third = _note().copyWith(
+      id: 'block-3',
+      type: NoteBlockTypeV1.summary,
+      markdown: '## Третий блок',
+      position: 2,
+    );
+    var deleted = false;
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async {
+          return _workspace().copyWith(
+            block: deleted ? [_note(), third] : [_note(), second, third],
+          );
+        });
+    when(() => repositories.lesson.deleteBlock(second)).thenAnswer((_) async {
+      deleted = true;
+      return second;
+    });
+    await _setSurface(tester, const Size(1440, 900));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. Тезис'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Удалить блок').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('note-editor-block-2')), findsNothing);
+    expect(find.byKey(const ValueKey('note-editor-block-3')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('note-editor-block-3')))
+          .focusNode
+          ?.hasFocus,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slash commands navigate and protect homework draft', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async => _workspace());
+    when(() => repositories.lesson.updateBlock(any())).thenAnswer((call) {
+      final block = call.positionalArguments.single as NoteBlockV1;
+      return Future.value(block.copyWith(version: block.version + 1));
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+
+    final noteEditor = find.byKey(const ValueKey('note-editor-block-1'));
+    await tester.tap(noteEditor);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('Тип блока'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.enterText(noteEditor, '/');
+    await tester.pumpAndSettle();
+    expect(find.text('Тип блока'), findsOneWidget);
+    expect(find.text('Markdown'), findsOneWidget);
+    final commandSearch = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == 'Найдите действие…',
+    );
+    await tester.enterText(commandSearch, 'Источник блока');
+    await tester.pumpAndSettle();
+    expect(find.text('Блок'), findsOneWidget);
+    await tester.enterText(commandSearch, 'перейти файлы');
+    await tester.pumpAndSettle();
+    expect(find.text('Навигация'), findsOneWidget);
+    await tester.enterText(commandSearch, 'Новое задание');
+    await tester.pumpAndSettle();
+    expect(find.text('Урок'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('homework-inline-editor')),
+      findsOneWidget,
+    );
+    final prompt = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Условие',
+    );
+    await tester.enterText(prompt, 'Разобрать гарантии исключений');
+    await tester.pump();
+    expect(
+      tester
+          .widgetList<PopScope<dynamic>>(
+            find.byWidgetPredicate((widget) => widget is PopScope),
+          )
+          .any((scope) => !scope.canPop),
+      isTrue,
+    );
+    await tester.tap(find.byTooltip('Назад к материалу'));
+    await tester.pumpAndSettle();
+    expect(find.text('Изменения не сохранены'), findsOneWidget);
+    await tester.tap(find.text('Остаться'));
+    await tester.pumpAndSettle();
+    expect(find.text('Разобрать гарантии исключений'), findsOneWidget);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('note formatting and block source stay in the document', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    final sourced = _note().copyWith(
+      sourceUrl: 'legacy link',
+      sourcePosition: 'Глава 3, 12:40',
+    );
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async => _workspace().copyWith(block: [sourced]));
+    when(() => repositories.lesson.updateBlock(any())).thenAnswer((call) {
+      final block = call.positionalArguments.single as NoteBlockV1;
+      return Future.value(block.copyWith(version: block.version + 1));
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Некорректная ссылка'), findsOneWidget);
+    final editor = find.byKey(const ValueKey('note-editor-block-1'));
+    await tester.tap(editor);
+    await tester.pump();
+    final controller = tester.widget<TextField>(editor).controller!
+      ..selection = const TextSelection(baseOffset: 3, extentOffset: 7);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(controller.text, contains('**RAII**'));
+    final linkStart = controller.text.indexOf('Ресурс');
+    controller.selection = TextSelection(
+      baseOffset: linkStart,
+      extentOffset: linkStart + 'Ресурс'.length,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(controller.text, contains('[Ресурс](https://)'));
+
+    await tester.drag(
+      find.byKey(const PageStorageKey('lesson-note-document')),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(editor));
+    await tester.pump();
+    final sourceButton = find.byTooltip('Источник блока');
+    await tester.ensureVisible(sourceButton);
+    await tester.tap(sourceButton);
+    await tester.pumpAndSettle();
+    final url = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Ссылка',
+    );
+    await tester.enterText(url, 'https://example.com/lesson');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+    expect(find.text('Открыть источник'), findsOneWidget);
+    expect(find.text('Глава 3, 12:40'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -299,6 +618,107 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<TextField>(editor).controller?.text, _note().markdown);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('homework draft cancels and saves inline', (tester) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    var task = _workspace().task.single;
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async {
+          return _workspace().copyWith(task: [task]);
+        });
+    when(() => repositories.lesson.updateTask(any())).thenAnswer((call) async {
+      task = (call.positionalArguments.single as HomeworkTaskV1).copyWith(
+        version: task.version + 1,
+      );
+      return task;
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Домашняя работа').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Задание 1'));
+    await tester.pumpAndSettle();
+
+    final prompt = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Условие',
+    );
+    await tester.enterText(prompt, 'Локальный черновик задания');
+    final cancel = find.widgetWithText(TextButton, 'Отмена');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    expect(find.text('Объяснить сильную гарантию исключений.'), findsOneWidget);
+    expect(find.text('Локальный черновик задания'), findsNothing);
+
+    await tester.tap(find.text('Задание 1'));
+    await tester.pumpAndSettle();
+    await tester.enterText(prompt, 'Сохранённое условие задания');
+    final save = find.widgetWithText(FilledButton, 'Сохранить');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.text('Сохранённое условие задания'), findsOneWidget);
+    verify(() => repositories.lesson.updateTask(any())).called(1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('file draft exposes failure and retries save', (tester) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    var file = _workspace().file.single;
+    var attempt = 0;
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async {
+          return _workspace().copyWith(file: [file]);
+        });
+    when(() => repositories.lesson.updateFile(any())).thenAnswer((call) async {
+      attempt++;
+      if (attempt == 1) throw const UnavailableErrorV1();
+      file = (call.positionalArguments.single as CodeFileV1).copyWith(
+        version: file.version + 1,
+      );
+      return file;
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Файлы').last);
+    await tester.pumpAndSettle();
+
+    final editor = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == 'Содержимое UTF-8 файла',
+    );
+    await tester.enterText(editor, 'int main() { return 2; }');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+    await tester.pumpAndSettle();
+    expect(attempt, 1);
+    expect(
+      repositories.facade.lessonEditorController.state.saveState,
+      SaveStateV1.failed,
+    );
+    expect(find.text('Ошибка сохранения'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ошибка сохранения'), findsNothing);
+    expect(find.text('Изменён'), findsNothing);
+    expect(attempt, 2);
     expect(tester.takeException(), isNull);
   });
 

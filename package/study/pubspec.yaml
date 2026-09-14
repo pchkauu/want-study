@@ -23,6 +23,7 @@ dependencies:
   injectable: ^3.0.0
   launch_mode: ^0.2.0
   package_context: ^2.2.0
+  url_launcher: ^6.3.2
   uuid: ^4.5.2
 
 dev_dependencies:

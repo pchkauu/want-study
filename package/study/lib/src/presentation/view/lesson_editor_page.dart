@@ -1,11 +1,20 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:bloc_effects/bloc_effects.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:study/src/application/_barrel.dart';
 import 'package:study/src/domain/_barrel.dart';
 import 'package:study/src/presentation/_barrel.dart';
+import 'package:url_launcher/url_launcher.dart' as url_launcher;
 import 'package:uuid/uuid.dart';
+
+part 'lesson_editor_file.dart';
+part 'lesson_editor_homework.dart';
+part 'lesson_editor_note.dart';
 
 final class LessonEditorPageV1 extends StatefulWidget {
   final StudyV1 study;
@@ -23,14 +32,26 @@ final class LessonEditorPageV1 extends StatefulWidget {
   State<LessonEditorPageV1> createState() => _LessonEditorPageV1State();
 }
 
-final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
+final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
+    with SingleTickerProviderStateMixin {
   late final LessonEditorControllerV2 _controller;
+  late final TabController _tabController;
+  final _noteKey = GlobalKey<_NoteDocumentState>();
+  final _homeworkKey = GlobalKey<_HomeworkViewState>();
+  final _fileKey = GlobalKey<_FileViewState>();
+  var _viewMode = _LessonViewMode.edit;
+  var _homeworkCreateRequest = 0;
+  var _homeworkDirty = false;
+  var _fileDirty = false;
   var _isActive = true;
+
+  bool get _hasLocalDraft => _homeworkDirty || _fileDirty;
 
   @override
   void initState() {
     super.initState();
     _controller = widget.controller..add(LessonEditorStartedV2(widget.lesson));
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -43,6 +64,12 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
   void deactivate() {
     _isActive = false;
     super.deactivate();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -59,92 +86,163 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
             listener: _onEffect,
             builder: (context, state) {
               final unsafeToLeave =
-                  state.saveState == SaveStateV1.dirty ||
-                  state.saveState == SaveStateV1.saving ||
-                  state.saveState == SaveStateV1.failed ||
-                  state.saveState == SaveStateV1.conflict;
+                  _hasLocalDraft || _isControllerDraftUnsafe(state.saveState);
+              final effectiveSaveState =
+                  _hasLocalDraft &&
+                      {
+                        SaveStateV1.clean,
+                        SaveStateV1.saved,
+                      }.contains(state.saveState)
+                  ? SaveStateV1.dirty
+                  : state.saveState;
               return PopScope(
                 canPop: !unsafeToLeave,
                 onPopInvokedWithResult: (didPop, _) {
-                  if (!didPop) {
-                    _controller.add(const LessonEditorNavigationRequestedV2());
-                  }
+                  if (!didPop) unawaited(_requestLeave(state));
                 },
                 child: StudyBackdrop(
-                  child: DefaultTabController(
-                    length: 3,
-                    child: Scaffold(
-                      backgroundColor: Colors.transparent,
-                      appBar: AppBar(
-                        toolbarHeight: 74,
-                        leadingWidth: 64,
-                        leading: Padding(
-                          padding: const EdgeInsets.only(left: 16),
-                          child: IconButton(
-                            tooltip: 'Назад',
-                            onPressed: () => Navigator.maybePop(context),
-                            icon: const Icon(Icons.arrow_back_rounded),
-                          ),
-                        ),
-                        title: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.lesson.sourcePosition.isEmpty
-                                  ? widget.study.title
-                                  : '${widget.study.title}  /  ${widget.lesson.sourcePosition}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            Text(
-                              widget.lesson.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                        bottom: PreferredSize(
-                          preferredSize: const Size.fromHeight(54),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHigh,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const TabBar(
-                                  isScrollable: true,
-                                  tabAlignment: TabAlignment.start,
-                                  padding: EdgeInsets.all(4),
-                                  indicatorSize: TabBarIndicatorSize.tab,
-                                  dividerHeight: 0,
-                                  tabs: [
-                                    Tab(text: 'Конспект'),
-                                    Tab(text: 'Домашняя работа'),
-                                    Tab(text: 'Файлы'),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        actions: [
-                          _SaveBadge(state: state.saveState),
-                          const SizedBox(width: 20),
-                        ],
-                      ),
-                      body: _body(state),
-                    ),
+                  child: Scaffold(
+                    backgroundColor: Colors.transparent,
+                    appBar: _buildAppBar(state, effectiveSaveState),
+                    body: _body(state),
                   ),
                 ),
               );
             },
           ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(
+    LessonEditorStateV2 state,
+    SaveStateV1 saveState,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 960;
+    final workspace = state.workspace;
+    return AppBar(
+      toolbarHeight: 86,
+      leadingWidth: 112,
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: 'Назад к материалу',
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            const SizedBox(width: 8),
+            Image.asset(
+              'asset/logo_512px.png',
+              package: 'study',
+              width: 34,
+              height: 34,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              semanticLabel: 'Want Study',
+            ),
+          ],
+        ),
+      ),
+      titleSpacing: 12,
+      title: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    widget.study.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                if (widget.lesson.sourcePosition.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.chevron_right_rounded, size: 14),
+                  ),
+                  Flexible(
+                    child: Text(
+                      widget.lesson.sourcePosition,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              widget.lesson.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        if (width >= 1120) _LessonStatusBadge(status: widget.lesson.status),
+        if (widget.lesson.url.isNotEmpty)
+          IconButton(
+            tooltip: _httpUri(widget.lesson.url) == null
+                ? 'Некорректная ссылка источника'
+                : 'Открыть источник урока',
+            onPressed: _httpUri(widget.lesson.url) == null
+                ? null
+                : () => _openExternalUrl(widget.lesson.url),
+            icon: const Icon(Icons.open_in_new_rounded),
+          ),
+        _SaveBadge(state: saveState, compact: compact),
+        const SizedBox(width: 16),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(58),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Row(
+            children: [
+              Flexible(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    padding: const EdgeInsets.all(4),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerHeight: 0,
+                    tabs: [
+                      _LessonTab(
+                        label: 'Конспект',
+                        count: workspace?.block.length ?? 0,
+                      ),
+                      _LessonTab(
+                        label: 'Домашняя работа',
+                        count: workspace?.task.length ?? 0,
+                      ),
+                      _LessonTab(
+                        label: 'Файлы',
+                        count: workspace?.file.length ?? 0,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -165,41 +263,145 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
       );
     }
     final busy = state.saveState == SaveStateV1.saving;
-    return TabBarView(
-      children: [
-        _NoteView(
-          block: workspace.block,
-          busy: busy,
-          onChanged: (block) =>
-              _controller.add(LessonEditorBlockChangedV2(block)),
-          onAdd: (type) => _addBlock(type, workspace.block.length),
-          onDelete: (block) => _deleteItem(context, block),
-          onConcept: (block) => _editBlockConcept(context, block),
-          onMove: (block, offset) =>
-              _controller.add(LessonEditorBlockMoveRequestedV2(block, offset)),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(
+          LogicalKeyboardKey.keyP,
+          meta: true,
+          shift: true,
+        ): () =>
+            _noteKey.currentState?.openCommands(),
+        const SingleActivator(
+          LogicalKeyboardKey.keyP,
+          control: true,
+          shift: true,
+        ): () =>
+            _noteKey.currentState?.openCommands(),
+      },
+      child: Focus(
+        autofocus: true,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _NoteDocument(
+              key: _noteKey,
+              block: workspace.block,
+              busy: busy,
+              mode: _viewMode,
+              onModeChanged: (mode) => setState(() => _viewMode = mode),
+              onChanged: (block) =>
+                  _controller.add(LessonEditorBlockChangedV2(block)),
+              onAdd: _addBlock,
+              onDelete: _deleteItem,
+              onConcept: _editBlockConcept,
+              onSource: _editBlockSource,
+              onOpenUrl: _openExternalUrl,
+              onMove: (block, offset) => _controller.add(
+                LessonEditorBlockMoveRequestedV2(block, offset),
+              ),
+              onLessonAction: (action) =>
+                  _handleLessonAction(action, workspace),
+            ),
+            _HomeworkView(
+              key: _homeworkKey,
+              studyId: widget.lesson.studyId,
+              lessonId: widget.lesson.id,
+              createRequest: _homeworkCreateRequest,
+              task: workspace.task,
+              busy: busy,
+              onChanged: (task) =>
+                  _controller.add(LessonEditorTaskChangedV2(task)),
+              onAdded: (task) => _controller.add(LessonEditorTaskAddedV2(task)),
+              onDelete: _deleteItem,
+              onMove: (task, offset) => _controller.add(
+                LessonEditorTaskMoveRequestedV2(task, offset),
+              ),
+              onDirtyChanged: _setHomeworkDirty,
+            ),
+            _FileView(
+              key: _fileKey,
+              file: workspace.file,
+              busy: busy,
+              saveState: state.saveState,
+              onChanged: (file) =>
+                  _controller.add(LessonEditorFileChangedV2(file)),
+              onRetry: () => _controller.add(const LessonEditorRetrySaveV2()),
+              onAdd: () => _addFile(workspace.task),
+              onDelete: _deleteItem,
+              onDirtyChanged: _setFileDirty,
+            ),
+          ],
         ),
-        _HomeworkView(
-          task: workspace.task,
-          busy: busy,
-          onChanged: (task) => _controller.add(LessonEditorTaskChangedV2(task)),
-          onAdd: () => _addTask(context, workspace.task.length),
-          onEdit: (task) => _addTask(context, task.position, task),
-          onDelete: (task) => _deleteItem(context, task),
-          onMove: (task, offset) =>
-              _controller.add(LessonEditorTaskMoveRequestedV2(task, offset)),
-        ),
-        _FileView(
-          file: workspace.file,
-          busy: busy,
-          onChanged: (file) => _controller.add(LessonEditorFileChangedV2(file)),
-          onAdd: () => _addFile(context, workspace.task),
-          onDelete: (file) => _deleteItem(context, file),
-        ),
-      ],
+      ),
     );
   }
 
-  Future<void> _deleteItem(BuildContext _, Object item) async {
+  void _setHomeworkDirty(bool value) {
+    if (mounted && _homeworkDirty != value) {
+      setState(() => _homeworkDirty = value);
+    }
+  }
+
+  void _setFileDirty(bool value) {
+    if (mounted && _fileDirty != value) setState(() => _fileDirty = value);
+  }
+
+  String _addBlock(NoteBlockTypeV1 type) {
+    final id = const Uuid().v4();
+    final position = _controller.state.workspace?.block.length ?? 0;
+    _controller.add(
+      LessonEditorBlockAddedV2(
+        NoteBlockV1(
+          id: id,
+          studyId: widget.lesson.studyId,
+          lessonId: widget.lesson.id,
+          type: type,
+          position: position,
+        ),
+      ),
+    );
+    return id;
+  }
+
+  Future<void> _handleLessonAction(
+    _LessonAction action,
+    LessonWorkspaceV1 workspace,
+  ) async {
+    if (!mounted || !_isActive) return;
+    switch (action) {
+      case _LessonAction.note:
+        await _selectTab(0);
+      case _LessonAction.homework:
+        await _selectTab(1);
+      case _LessonAction.file:
+        await _selectTab(2);
+      case _LessonAction.newHomework:
+        setState(() => _homeworkCreateRequest++);
+        await _selectTab(1);
+      case _LessonAction.newFile:
+        await _selectTab(2);
+        if (mounted && _isActive) await _addFile(workspace.task);
+      case _LessonAction.read:
+        setState(() => _viewMode = _LessonViewMode.read);
+      case _LessonAction.back:
+        await Navigator.maybePop(context);
+    }
+  }
+
+  Future<void> _selectTab(int index) async {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
+    _tabController.animateTo(
+      index,
+      duration: duration,
+      curve: Curves.easeOutCubic,
+    );
+    if (duration > Duration.zero) await Future<void>.delayed(duration);
+    await WidgetsBinding.instance.endOfFrame;
+  }
+
+  Future<void> _deleteItem(Object item) async {
     if (!mounted || !_isActive) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -218,19 +420,18 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         ],
       ),
     );
-    if (mounted && _isActive && (confirmed ?? false)) {
-      switch (item) {
-        case final NoteBlockV1 value:
-          _controller.add(LessonEditorBlockDeletedV2(value));
-        case final HomeworkTaskV1 value:
-          _controller.add(LessonEditorTaskDeletedV2(value));
-        case final CodeFileV1 value:
-          _controller.add(LessonEditorFileDeletedV2(value));
-      }
+    if (!mounted || !_isActive || !(confirmed ?? false)) return;
+    switch (item) {
+      case final NoteBlockV1 value:
+        _controller.add(LessonEditorBlockDeletedV2(value));
+      case final HomeworkTaskV1 value:
+        _controller.add(LessonEditorTaskDeletedV2(value));
+      case final CodeFileV1 value:
+        _controller.add(LessonEditorFileDeletedV2(value));
     }
   }
 
-  Future<void> _editBlockConcept(BuildContext _, NoteBlockV1 block) async {
+  Future<void> _editBlockConcept(NoteBlockV1 block) async {
     if (!mounted || !_isActive) return;
     final concept = (await _controller.searchConcept(
       study: widget.study,
@@ -270,9 +471,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                                       block: block,
                                       link: !linked,
                                     );
-                                if (stored != null) {
-                                  concept[index] = stored;
-                                }
+                                if (stored != null) concept[index] = stored;
                                 if (mounted && _isActive && context.mounted) {
                                   setDialogState(
                                     () => busyConcept.remove(item.id),
@@ -294,174 +493,73 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     );
   }
 
-  Future<void> _onEffect(BuildContext _, LessonEditorEffectV2 effect) async {
+  Future<void> _editBlockSource(NoteBlockV1 block) async {
     if (!mounted || !_isActive) return;
-    switch (effect) {
-      case LessonEditorFailureEffectV2():
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Не удалось сохранить изменения')),
-        );
-      case LessonEditorNavigateEffectV2():
-        final navigator = Navigator.maybeOf(context);
-        if (navigator != null && navigator.canPop()) navigator.pop();
-      case LessonEditorDraftDecisionEffectV2():
-        final action = await showDialog<_DraftAction>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Изменения не сохранены'),
-            content: const Text('Выберите действие для текущего черновика.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, _DraftAction.stay),
-                child: const Text('Остаться'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, _DraftAction.discard),
-                child: const Text('Сбросить и перечитать'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, _DraftAction.retry),
-                child: const Text('Повторить сохранение'),
-              ),
-            ],
-          ),
-        );
-        if (!mounted || !_isActive) return;
-        switch (action) {
-          case _DraftAction.retry:
-            _controller.add(const LessonEditorRetrySaveV2());
-          case _DraftAction.discard:
-            _controller.add(const LessonEditorDiscardV2());
-          case _DraftAction.stay:
-          case null:
-            break;
-        }
-    }
-  }
-
-  void _addBlock(NoteBlockTypeV1 type, int position) {
-    if (!mounted || !_isActive) return;
-    _controller.add(
-      LessonEditorBlockAddedV2(
-        NoteBlockV1(
-          id: const Uuid().v4(),
-          studyId: widget.lesson.studyId,
-          lessonId: widget.lesson.id,
-          type: type,
-          position: position,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _addTask(
-    BuildContext _,
-    int position, [
-    HomeworkTaskV1? existing,
-  ]) async {
-    if (!mounted || !_isActive) return;
-    final prompt = TextEditingController(text: existing?.promptMarkdown);
-    final solution = TextEditingController(text: existing?.solutionMarkdown);
-    var dueAt = existing?.dueAt;
-    final result = await showStudyDialogV1<HomeworkTaskV1>(
+    final url = TextEditingController(text: block.sourceUrl);
+    final position = TextEditingController(text: block.sourcePosition);
+    final result = await showStudyDialogV1<NoteBlockV1>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => StudySideSheet(
-          title: Text(existing == null ? 'Новое задание' : 'Задание'),
-          child: SizedBox(
-            width: 560,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: prompt,
-                  maxLines: 5,
-                  decoration: const InputDecoration(labelText: 'Условие'),
-                ),
-                TextField(
-                  controller: solution,
-                  maxLines: 5,
-                  decoration: const InputDecoration(labelText: 'Решение'),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        dueAt == null
-                            ? 'Срок не задан'
-                            : 'Срок: ${_dateLabel(dueAt!)}',
-                      ),
+        builder: (context, setDialogState) {
+          final value = url.text.trim();
+          final invalid = value.isNotEmpty && _httpUri(value) == null;
+          return StudySideSheet(
+            title: const Text('Источник блока'),
+            child: SizedBox(
+              width: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: url,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Ссылка',
+                      hintText: 'https://…',
+                      errorText: invalid
+                          ? 'Ссылка сохранится, но открыть её нельзя'
+                          : null,
                     ),
-                    if (dueAt != null)
-                      IconButton(
-                        tooltip: 'Убрать срок',
-                        onPressed: () => setDialogState(() => dueAt = null),
-                        icon: const Icon(Icons.clear),
-                      ),
-                    OutlinedButton(
-                      onPressed: () async {
-                        final selected = await showDatePicker(
-                          context: context,
-                          firstDate: DateTime(1900),
-                          lastDate: DateTime(9999),
-                          initialDate: dueAt?.toLocal() ?? DateTime.now(),
-                        );
-                        if (selected != null &&
-                            mounted &&
-                            _isActive &&
-                            context.mounted) {
-                          setDialogState(() => dueAt = selected.toUtc());
-                        }
-                      },
-                      child: const Text('Выбрать срок'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: position,
+                    decoration: const InputDecoration(
+                      labelText: 'Позиция в источнике',
+                      hintText: 'Глава 3, 12:40',
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                existing?.copyWith(
-                      promptMarkdown: prompt.text,
-                      solutionMarkdown: solution.text,
-                      dueAt: () => dueAt,
-                    ) ??
-                    HomeworkTaskV1(
-                      id: const Uuid().v4(),
-                      studyId: widget.lesson.studyId,
-                      lessonId: widget.lesson.id,
-                      promptMarkdown: prompt.text,
-                      solutionMarkdown: solution.text,
-                      dueAt: dueAt,
-                      position: position,
-                    ),
+                  ),
+                ],
               ),
-              child: Text(existing == null ? 'Добавить' : 'Сохранить'),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  block.copyWith(
+                    sourceUrl: url.text.trim(),
+                    sourcePosition: position.text.trim(),
+                  ),
+                ),
+                child: const Text('Сохранить'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    prompt.dispose();
-    solution.dispose();
+    url.dispose();
+    position.dispose();
     if (mounted && _isActive && result != null) {
-      _controller.add(
-        existing == null
-            ? LessonEditorTaskAddedV2(result)
-            : LessonEditorTaskChangedV2(result),
-      );
+      _controller.add(LessonEditorBlockChangedV2(result));
     }
   }
 
-  Future<void> _addFile(BuildContext _, List<HomeworkTaskV1> task) async {
+  Future<void> _addFile(List<HomeworkTaskV1> task) async {
     if (!mounted || !_isActive) return;
     final relativePath = TextEditingController();
     final language = TextEditingController();
@@ -473,7 +571,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         builder: (context, setDialogState) => StudySideSheet(
           title: const Text('Новый файл'),
           child: SizedBox(
-            width: 640,
+            width: 520,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -485,10 +583,12 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                     hintText: 'src/main.c',
                   ),
                 ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: language,
                   decoration: const InputDecoration(labelText: 'Язык'),
                 ),
+                const SizedBox(height: 14),
                 DropdownButtonFormField<String?>(
                   initialValue: homeworkTaskId,
                   decoration: const InputDecoration(
@@ -505,10 +605,12 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                   onChanged: (value) =>
                       setDialogState(() => homeworkTaskId = value),
                 ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: content,
                   minLines: 8,
                   maxLines: 16,
+                  inputFormatters: const [_Utf8LengthFormatter()],
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(labelText: 'Содержимое'),
                 ),
@@ -548,14 +650,149 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
       _controller.add(LessonEditorFileAddedV2(result));
     }
   }
+
+  Future<void> _requestLeave(LessonEditorStateV2 state) async {
+    if (!mounted || !_isActive) return;
+    if (!_hasLocalDraft && !_isControllerDraftUnsafe(state.saveState)) {
+      await Navigator.maybePop(context);
+      return;
+    }
+    final action = await showDialog<_LeaveAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Изменения не сохранены'),
+        content: const Text(
+          'Сохраните изменения, останьтесь в уроке или верните данные с сервера.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _LeaveAction.stay),
+            child: const Text('Остаться'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, _LeaveAction.discard),
+            child: const Text('Сбросить и перечитать'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _LeaveAction.save),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !_isActive) return;
+    switch (action) {
+      case _LeaveAction.save:
+        final homeworkSaved = _homeworkKey.currentState?.commitDraft() ?? true;
+        final fileSaved = _fileKey.currentState?.commitDraft() ?? true;
+        if (!homeworkSaved || !fileSaved) return;
+        _controller.add(const LessonEditorRetrySaveV2());
+        if (await _waitForSuccessfulSave() && mounted && _isActive) {
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted || !_isActive) return;
+          await Navigator.maybePop(context);
+        }
+      case _LeaveAction.discard:
+        _homeworkKey.currentState?.discardDraft();
+        _fileKey.currentState?.discardDraft();
+        _controller.add(const LessonEditorDiscardV2());
+      case _LeaveAction.stay:
+      case null:
+        break;
+    }
+  }
+
+  Future<bool> _waitForSuccessfulSave() async {
+    await Future<void>.delayed(Duration.zero);
+    if (!_isControllerDraftUnsafe(_controller.state.saveState)) return true;
+    final state = await _controller.stream.firstWhere(
+      (state) => {
+        SaveStateV1.clean,
+        SaveStateV1.saved,
+        SaveStateV1.failed,
+        SaveStateV1.conflict,
+      }.contains(state.saveState),
+    );
+    return {SaveStateV1.clean, SaveStateV1.saved}.contains(state.saveState);
+  }
+
+  Future<void> _onEffect(BuildContext _, LessonEditorEffectV2 effect) async {
+    if (!mounted || !_isActive) return;
+    switch (effect) {
+      case LessonEditorFailureEffectV2():
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Не удалось сохранить изменения')),
+        );
+      case LessonEditorNavigateEffectV2():
+        final navigator = Navigator.maybeOf(context);
+        if (navigator != null && navigator.canPop()) navigator.pop();
+      case LessonEditorDraftDecisionEffectV2():
+        await _requestLeave(_controller.state);
+    }
+  }
+
+  Future<void> _openExternalUrl(String value) async {
+    final uri = _httpUri(value);
+    if (uri == null || !mounted || !_isActive) return;
+    try {
+      final opened = await url_launcher.launchUrl(
+        uri,
+        mode: url_launcher.LaunchMode.externalApplication,
+      );
+      if (!opened && mounted && _isActive) _showLinkFailure();
+    } on Object {
+      if (mounted && _isActive) _showLinkFailure();
+    }
+  }
+
+  void _showLinkFailure() {
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('Не удалось открыть ссылку')));
+  }
 }
 
-enum _DraftAction { retry, stay, discard }
+enum _LessonViewMode { edit, read }
+
+enum _LessonAction { note, homework, file, newHomework, newFile, read, back }
+
+enum _LeaveAction { save, stay, discard }
+
+final class _LessonTab extends StatelessWidget {
+  final String label;
+  final int count;
+
+  const _LessonTab({required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tab(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          const SizedBox(width: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              child: Text('$count'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 final class _SaveBadge extends StatelessWidget {
   final SaveStateV1 state;
+  final bool compact;
 
-  const _SaveBadge({required this.state});
+  const _SaveBadge({required this.state, required this.compact});
 
   @override
   Widget build(BuildContext context) {
@@ -567,7 +804,7 @@ final class _SaveBadge extends StatelessWidget {
         studyWarningColor,
       ),
       SaveStateV1.saving => (Icons.sync, 'Сохранение', scheme.primary),
-      SaveStateV1.saved => (
+      SaveStateV1.saved || SaveStateV1.clean => (
         Icons.cloud_done_outlined,
         'Сохранено',
         scheme.tertiary,
@@ -578,699 +815,84 @@ final class _SaveBadge extends StatelessWidget {
         'Конфликт',
         studyWarningColor,
       ),
-      SaveStateV1.clean => (
-        Icons.cloud_done_outlined,
-        'Сохранено',
-        scheme.tertiary,
-      ),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    final child = Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.11),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 16, color: color),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium
-                ?.copyWith(color: color),
-          ),
+          if (!compact) ...[
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium
+                  ?.copyWith(color: color),
+            ),
+          ],
         ],
       ),
     );
+    return Tooltip(message: label, child: child);
   }
 }
 
-final class _NoteView extends StatelessWidget {
-  final List<NoteBlockV1> block;
-  final bool busy;
-  final ValueChanged<NoteBlockV1> onChanged;
-  final ValueChanged<NoteBlockTypeV1> onAdd;
-  final ValueChanged<NoteBlockV1> onDelete;
-  final ValueChanged<NoteBlockV1> onConcept;
-  final void Function(NoteBlockV1, int) onMove;
+final class _LessonStatusBadge extends StatelessWidget {
+  final LessonStatusV1 status;
 
-  const _NoteView({
-    required this.block,
-    required this.busy,
-    required this.onChanged,
-    required this.onAdd,
-    required this.onDelete,
-    required this.onConcept,
-    required this.onMove,
-  });
+  const _LessonStatusBadge({required this.status});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (label, color) = switch (status) {
+      LessonStatusV1.planned => ('Запланирован', scheme.onSurfaceVariant),
+      LessonStatusV1.studying => ('Изучается', scheme.primary),
+      LessonStatusV1.homework => ('Домашняя работа', studyWarningColor),
+      LessonStatusV1.mastered => ('Освоен', scheme.tertiary),
+    };
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: StudySurface(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
-              child: StudySectionHeader(
-                title: 'Конспект',
-                description: 'Пишите в Markdown и сразу проверяйте результат.',
-                trailing: _AddBlockButton(enabled: !busy, onSelected: onAdd),
-              ),
-            ),
-            const Divider(),
-            Expanded(
-              child: block.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.notes_rounded,
-                            size: 34,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            'Конспект пока пуст',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Добавьте первый смысловой блок.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 20),
-                          _AddBlockButton(enabled: !busy, onSelected: onAdd),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(18),
-                      itemCount: block.length,
-                      itemBuilder: (context, index) => _BlockEditor(
-                        key: ValueKey(block[index].id),
-                        block: block[index],
-                        busy: busy,
-                        onChanged: onChanged,
-                        onDelete: () => onDelete(block[index]),
-                        onConcept: () => onConcept(block[index]),
-                        onMove: (offset) => onMove(block[index], offset),
-                      ),
-                    ),
-            ),
-          ],
+      padding: const EdgeInsets.only(right: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.11),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium
+              ?.copyWith(color: color),
         ),
       ),
     );
   }
 }
 
-final class _AddBlockButton extends StatelessWidget {
-  final bool enabled;
-  final ValueChanged<NoteBlockTypeV1> onSelected;
-
-  const _AddBlockButton({required this.enabled, required this.onSelected});
+final class _Utf8LengthFormatter extends TextInputFormatter {
+  const _Utf8LengthFormatter();
 
   @override
-  Widget build(BuildContext context) {
-    return MenuAnchor(
-      menuChildren: [
-        for (final type in NoteBlockTypeV1.values)
-          MenuItemButton(
-            onPressed: enabled ? () => onSelected(type) : null,
-            child: Text(_blockLabel(type)),
-          ),
-      ],
-      builder: (context, controller, _) => FilledButton.icon(
-        onPressed: enabled
-            ? () => controller.isOpen ? controller.close() : controller.open()
-            : null,
-        icon: const Icon(Icons.add),
-        label: const Text('Добавить блок'),
-      ),
-    );
-  }
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => utf8.encode(newValue.text).length <= StudyConstV1.maxContentBytes
+      ? newValue
+      : oldValue;
 }
 
-final class _BlockEditor extends StatefulWidget {
-  final NoteBlockV1 block;
-  final bool busy;
-  final ValueChanged<NoteBlockV1> onChanged;
-  final VoidCallback onDelete;
-  final VoidCallback onConcept;
-  final ValueChanged<int> onMove;
-
-  const _BlockEditor({
-    required this.block,
-    required this.busy,
-    required this.onChanged,
-    required this.onDelete,
-    required this.onConcept,
-    required this.onMove,
-    super.key,
-  });
-
-  @override
-  State<_BlockEditor> createState() => _BlockEditorState();
-}
-
-final class _BlockEditorState extends State<_BlockEditor> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.block.markdown);
-  }
-
-  @override
-  void didUpdateWidget(_BlockEditor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncTextController(_controller, widget.block.markdown);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 11,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _blockLabel(widget.block.type),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Выше',
-                  onPressed: widget.busy ? null : () => widget.onMove(-1),
-                  icon: const Icon(Icons.arrow_upward),
-                ),
-                IconButton(
-                  tooltip: 'Ниже',
-                  onPressed: widget.busy ? null : () => widget.onMove(1),
-                  icon: const Icon(Icons.arrow_downward),
-                ),
-                IconButton(
-                  tooltip: 'Связать понятия',
-                  onPressed: widget.busy ? null : widget.onConcept,
-                  icon: const Icon(Icons.hub_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Удалить блок',
-                  onPressed: widget.busy ? null : widget.onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final editor = SizedBox(
-                  height: 300,
-                  child: TextField(
-                    controller: _controller,
-                    expands: true,
-                    maxLines: null,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      height: 1.45,
-                    ),
-                    onChanged: (value) => widget.onChanged(
-                      widget.block.copyWith(markdown: value),
-                    ),
-                    decoration: const InputDecoration(hintText: 'Markdown'),
-                  ),
-                );
-                final preview = DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: SizedBox(
-                    height: 300,
-                    child: Markdown(
-                      data: _controller.text,
-                      padding: const EdgeInsets.all(18),
-                    ),
-                  ),
-                );
-                if (constraints.maxWidth < 800) {
-                  return Column(
-                    children: [editor, const SizedBox(height: 12), preview],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: editor),
-                    const SizedBox(width: 16),
-                    Expanded(child: preview),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-final class _HomeworkView extends StatelessWidget {
-  final List<HomeworkTaskV1> task;
-  final bool busy;
-  final ValueChanged<HomeworkTaskV1> onChanged;
-  final VoidCallback onAdd;
-  final ValueChanged<HomeworkTaskV1> onEdit;
-  final ValueChanged<HomeworkTaskV1> onDelete;
-  final void Function(HomeworkTaskV1, int) onMove;
-
-  const _HomeworkView({
-    required this.task,
-    required this.busy,
-    required this.onChanged,
-    required this.onAdd,
-    required this.onEdit,
-    required this.onDelete,
-    required this.onMove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: StudySurface(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
-              child: StudySectionHeader(
-                title: 'Домашняя работа',
-                description: 'Условия, решения и сроки выполнения.',
-                trailing: FilledButton.icon(
-                  onPressed: busy ? null : onAdd,
-                  icon: const Icon(Icons.add_task),
-                  label: const Text('Добавить задание'),
-                ),
-              ),
-            ),
-            const Divider(),
-            Expanded(
-              child: task.isEmpty
-                  ? StudyStateView(
-                      icon: Icons.task_alt_outlined,
-                      title: 'Заданий пока нет',
-                      description: 'Добавьте условие и решение первой задачи.',
-                      actionLabel: 'Добавить задание',
-                      onAction: busy ? null : onAdd,
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(18),
-                      itemCount: task.length,
-                      itemBuilder: (context, index) {
-                        final item = task[index];
-                        final done = item.status == HomeworkStatusV1.done;
-                        return Card(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLow,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Checkbox(
-                                  value: done,
-                                  onChanged: busy
-                                      ? null
-                                      : (value) => onChanged(
-                                          item.copyWith(
-                                            status: value ?? false
-                                                ? HomeworkStatusV1.done
-                                                : HomeworkStatusV1.todo,
-                                          ),
-                                        ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      MarkdownBody(data: item.promptMarkdown),
-                                      if (item.dueAt != null) ...[
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          'Срок: ${_dateLabel(item.dueAt!)}',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: studyWarningColor,
-                                              ),
-                                        ),
-                                      ],
-                                      if (item.solutionMarkdown.isNotEmpty) ...[
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          'Решение',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .labelLarge,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        MarkdownBody(
-                                          data: item.solutionMarkdown,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                PopupMenuButton<_HomeworkAction>(
-                                  tooltip: 'Действия с заданием',
-                                  enabled: !busy,
-                                  onSelected: (action) {
-                                    switch (action) {
-                                      case _HomeworkAction.moveUp:
-                                        onMove(item, -1);
-                                      case _HomeworkAction.moveDown:
-                                        onMove(item, 1);
-                                      case _HomeworkAction.edit:
-                                        onEdit(item);
-                                      case _HomeworkAction.delete:
-                                        onDelete(item);
-                                    }
-                                  },
-                                  itemBuilder: (context) => const [
-                                    PopupMenuItem(
-                                      value: _HomeworkAction.moveUp,
-                                      child: Text('Переместить выше'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: _HomeworkAction.moveDown,
-                                      child: Text('Переместить ниже'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: _HomeworkAction.edit,
-                                      child: Text('Изменить задание'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: _HomeworkAction.delete,
-                                      child: Text('Удалить задание'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _HomeworkAction { moveUp, moveDown, edit, delete }
-
-final class _FileView extends StatefulWidget {
-  final List<CodeFileV1> file;
-  final bool busy;
-  final ValueChanged<CodeFileV1> onChanged;
-  final VoidCallback onAdd;
-  final ValueChanged<CodeFileV1> onDelete;
-
-  const _FileView({
-    required this.file,
-    required this.busy,
-    required this.onChanged,
-    required this.onAdd,
-    required this.onDelete,
-  });
-
-  @override
-  State<_FileView> createState() => _FileViewState();
-}
-
-final class _FileViewState extends State<_FileView> {
-  String? _selectedFileId;
-
-  @override
-  void didUpdateWidget(_FileView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.file.every((file) => file.id != _selectedFileId)) {
-      _selectedFileId = widget.file.firstOrNull?.id;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = widget.file
-        .where((file) => file.id == _selectedFileId)
-        .firstOrNull;
-    final file = selected ?? widget.file.firstOrNull;
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: StudySurface(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 20, 18),
-              child: StudySectionHeader(
-                title: 'Файлы',
-                description: 'UTF-8 файлы урока и домашних заданий.',
-                trailing: FilledButton.icon(
-                  onPressed: widget.busy ? null : widget.onAdd,
-                  icon: const Icon(Icons.note_add_outlined),
-                  label: const Text('Добавить файл'),
-                ),
-              ),
-            ),
-            const Divider(),
-            Expanded(
-              child: file == null
-                  ? StudyStateView(
-                      icon: Icons.code_rounded,
-                      title: 'Файлов пока нет',
-                      description: 'Добавьте исходный код или текстовый файл.',
-                      actionLabel: 'Добавить файл',
-                      onAction: widget.busy ? null : widget.onAdd,
-                    )
-                  : Builder(
-                      builder: (context) {
-                        final compact = MediaQuery.sizeOf(context).width < 960;
-                        final editor = Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: _CodeFileEditor(
-                            key: ValueKey(file.id),
-                            file: file,
-                            busy: widget.busy,
-                            onSaved: widget.onChanged,
-                            onDelete: () => widget.onDelete(file),
-                          ),
-                        );
-                        if (compact) {
-                          return Column(
-                            children: [
-                              SizedBox(height: 68, child: _fileList(true)),
-                              const Divider(),
-                              Expanded(
-                                child: SingleChildScrollView(child: editor),
-                              ),
-                            ],
-                          );
-                        }
-                        return Row(
-                          children: [
-                            SizedBox(width: 240, child: _fileList(false)),
-                            const VerticalDivider(),
-                            Expanded(
-                              child: SingleChildScrollView(child: editor),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _fileList(bool horizontal) {
-    final theme = Theme.of(context);
-    if (horizontal) {
-      return ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        scrollDirection: Axis.horizontal,
-        itemCount: widget.file.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final item = widget.file[index];
-          return ChoiceChip(
-            selected: item.id == (_selectedFileId ?? widget.file.first.id),
-            label: Text(item.relativePath),
-            onSelected: (_) => setState(() => _selectedFileId = item.id),
-          );
-        },
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: widget.file.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 4),
-      itemBuilder: (context, index) {
-        final item = widget.file[index];
-        final selected = item.id == (_selectedFileId ?? widget.file.first.id);
-        return Material(
-          color: selected
-              ? theme.colorScheme.primary.withValues(alpha: 0.16)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          child: ListTile(
-            dense: true,
-            selected: selected,
-            leading: const Icon(Icons.code_rounded, size: 18),
-            title: Text(
-              item.relativePath,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => setState(() => _selectedFileId = item.id),
-          ),
-        );
-      },
-    );
-  }
-}
-
-final class _CodeFileEditor extends StatefulWidget {
-  final CodeFileV1 file;
-  final bool busy;
-  final ValueChanged<CodeFileV1> onSaved;
-  final VoidCallback onDelete;
-
-  const _CodeFileEditor({
-    required this.file,
-    required this.busy,
-    required this.onSaved,
-    required this.onDelete,
-    super.key,
-  });
-
-  @override
-  State<_CodeFileEditor> createState() => _CodeFileEditorState();
-}
-
-final class _CodeFileEditorState extends State<_CodeFileEditor> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.file.content);
-  }
-
-  @override
-  void didUpdateWidget(_CodeFileEditor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncTextController(_controller, widget.file.content);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.file.relativePath,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                FilledButton.tonal(
-                  onPressed: widget.busy
-                      ? null
-                      : () => widget.onSaved(
-                          widget.file.copyWith(content: _controller.text),
-                        ),
-                  child: const Text('Сохранить'),
-                ),
-                IconButton(
-                  tooltip: 'Удалить файл',
-                  onPressed: widget.busy ? null : widget.onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              minLines: 10,
-              maxLines: 24,
-              style: const TextStyle(fontFamily: 'monospace', height: 1.45),
-              decoration: const InputDecoration(hintText: 'Содержимое файла'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+Uri? _httpUri(String value) {
+  final uri = Uri.tryParse(value.trim());
+  return uri != null &&
+          uri.hasAuthority &&
+          (uri.scheme == 'http' || uri.scheme == 'https')
+      ? uri
+      : null;
 }
 
 String _blockLabel(NoteBlockTypeV1 type) => switch (type) {
@@ -1296,6 +918,13 @@ bool _isValidRelativePath(String value) {
       !value.contains(r'\') &&
       part.every((item) => item.isNotEmpty && item != '.' && item != '..');
 }
+
+bool _isControllerDraftUnsafe(SaveStateV1 state) => {
+  SaveStateV1.dirty,
+  SaveStateV1.saving,
+  SaveStateV1.failed,
+  SaveStateV1.conflict,
+}.contains(state);
 
 void _syncTextController(TextEditingController controller, String text) {
   if (controller.text == text) return;
