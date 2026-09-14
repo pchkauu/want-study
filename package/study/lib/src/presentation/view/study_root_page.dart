@@ -659,7 +659,6 @@ final class _NavigationBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: extended ? 220 : 64,
       child: Padding(
@@ -669,18 +668,15 @@ final class _NavigationBrand extends StatelessWidget {
               ? MainAxisAlignment.start
               : MainAxisAlignment.center,
           children: [
-            Container(
+            Image.asset(
+              'asset/logo_512px.png',
+              package: 'study',
+              key: const ValueKey('want-study-logo'),
               width: 44,
               height: 44,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.auto_stories_rounded,
-                color: Color(0xFFF2F4F8),
-                size: 23,
-              ),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              excludeFromSemantics: true,
             ),
             if (extended) ...[
               const SizedBox(width: 13),

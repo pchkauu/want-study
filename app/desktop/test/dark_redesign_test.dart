@@ -107,6 +107,8 @@ void main() {
       tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
       isTrue,
     );
+    expect(find.byKey(const ValueKey('want-study-logo')), findsOneWidget);
+    await _precacheLogo(tester);
     expect(find.text('Материал'), findsWidgets);
     expect(find.text('Домашняя работа'), findsWidgets);
     expect(
@@ -165,6 +167,7 @@ void main() {
     await _setSurface(tester, const Size(1024, 720));
     await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
     await tester.pumpAndSettle();
+    await _precacheLogo(tester);
 
     await tester.tap(find.byIcon(Icons.menu_book_outlined));
     await tester.pumpAndSettle();
@@ -407,6 +410,15 @@ Future<void> _setSurface(WidgetTester tester, Size size) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   addTearDown(tester.view.reset);
+}
+
+Future<void> _precacheLogo(WidgetTester tester) async {
+  final finder = find.byKey(const ValueKey('want-study-logo'));
+  final image = tester.widget<Image>(finder);
+  await tester.runAsync(
+    () => precacheImage(image.image, tester.element(finder)),
+  );
+  await tester.pump();
 }
 
 Future<void> _pumpCatalogState(
