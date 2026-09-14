@@ -1,3 +1,4 @@
+import 'package:domain_error/domain_error.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:grpc/grpc.dart';
 import 'package:grpc/protos.dart';
@@ -16,66 +17,82 @@ import 'package:want_study_desktop/src/proto/wantstudy/v1/study.pb.dart'
     as study_proto;
 import 'package:want_study_desktop/src/proto/wantstudy/v1/study.pbgrpc.dart';
 
-Future<T> _read<T>(Future<T> Function() call) async {
-  try {
-    return await call();
-  } on GrpcError catch (error, stackTrace) {
-    if (error.code == StatusCode.unavailable) {
-      try {
-        return await call();
-      } on GrpcError catch (retryError, retryStackTrace) {
-        throw _mapGrpcError(retryError, retryStackTrace);
-      } on Object catch (retryError, retryStackTrace) {
-        throw domain.UnexpectedErrorV1(
-          cause: retryError,
-          stackTrace: retryStackTrace,
-        );
-      }
-    }
-    throw _mapGrpcError(error, stackTrace);
-  } on Object catch (error, stackTrace) {
-    throw domain.UnexpectedErrorV1(cause: error, stackTrace: stackTrace);
-  }
-}
+mixin _GrpcTransportFacadeV1 {
+  domain.StudyErrorReporterV2 get errorReporter;
 
-Future<T> _write<T>(Future<T> Function() call) async {
-  try {
-    return await call();
-  } on GrpcError catch (error, stackTrace) {
-    throw _mapGrpcError(error, stackTrace);
-  } on Object catch (error, stackTrace) {
-    throw domain.UnexpectedErrorV1(cause: error, stackTrace: stackTrace);
-  }
-}
-
-Future<T> _createWrite<T>(
-  Future<T> Function() call,
-  Future<T?> Function() reconcile,
-) async {
-  try {
-    return await call();
-  } on GrpcError catch (error, stackTrace) {
-    if (error.code == StatusCode.deadlineExceeded) {
-      try {
-        final stored = await reconcile();
-        if (stored != null) {
-          return stored;
+  Future<T> _read<T>(Future<T> Function() call) =>
+      _capture('GrpcTransportFacadeV1.read():', () async {
+        try {
+          return await call();
+        } on GrpcError catch (error) {
+          if (error.code == StatusCode.unavailable) return call();
+          rethrow;
         }
-      } on domain.ConflictErrorV1 {
-        rethrow;
-      } on Object {
-        // Preserve the original ambiguous timeout.
+      });
+
+  Future<T> _write<T>(Future<T> Function() call) =>
+      _capture('GrpcTransportFacadeV1.write():', call);
+
+  Future<T> _createWrite<T>(
+    Future<T> Function() call,
+    Future<T?> Function() reconcile,
+  ) => _capture('GrpcTransportFacadeV1.createWrite():', () async {
+    try {
+      return await call();
+    } on GrpcError catch (error) {
+      if (error.code == StatusCode.deadlineExceeded) {
+        try {
+          final stored = await reconcile();
+          if (stored != null) return stored;
+        } on domain.ConflictErrorV1 {
+          rethrow;
+        } on Object {
+          // Preserve original ambiguous timeout.
+        }
       }
+      rethrow;
     }
-    throw _mapGrpcError(error, stackTrace);
-  } on domain.DomainError {
-    rethrow;
-  } on Object catch (error, stackTrace) {
-    throw domain.UnexpectedErrorV1(cause: error, stackTrace: stackTrace);
+  });
+
+  Future<T> _capture<T>(String operation, Future<T> Function() call) async {
+    final result = await captureResult(
+      call,
+      options: CaptureResultOptions(
+        mapToDomainError: (error, stackTrace) => error is GrpcError
+            ? _mapGrpcError(error, stackTrace)
+            : domain.UnexpectedErrorV1(cause: error, stackTrace: stackTrace),
+        onDomainError: (error, stackTrace) => errorReporter.reportDomainError(
+          context: domain.StudyErrorContextV1(
+            operation: operation,
+            layer: domain.StudyErrorLayerV1.infrastructure,
+          ),
+          error: error,
+          stackTrace: stackTrace,
+        ),
+        onRawError: (error, stackTrace) => errorReporter.reportRawError(
+          context: domain.StudyErrorContextV1(
+            operation: operation,
+            layer: domain.StudyErrorLayerV1.infrastructure,
+          ),
+          error: error,
+          stackTrace: stackTrace,
+        ),
+        onObserverError: (error, stackTrace) =>
+            errorReporter.reportObserverError(
+              context: domain.StudyErrorContextV1(
+                operation: operation,
+                layer: domain.StudyErrorLayerV1.infrastructure,
+              ),
+              error: error,
+              stackTrace: stackTrace,
+            ),
+      ),
+    );
+    return result.fold((error) => throw error, (value) => value);
   }
 }
 
-domain.DomainError _mapGrpcError(GrpcError error, StackTrace stackTrace) {
+DomainError _mapGrpcError(GrpcError error, StackTrace stackTrace) {
   final details = error.details ?? const [];
   final info = details.whereType<ErrorInfo>().firstOrNull;
   final reason = info?.reason;
@@ -110,19 +127,26 @@ domain.DomainError _mapGrpcError(GrpcError error, StackTrace stackTrace) {
   return domain.UnexpectedErrorV1(cause: error, stackTrace: stackTrace);
 }
 
-@LazySingleton(as: domain.StudyRepositoryV1)
-final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
+@LazySingleton(as: domain.StudyRepositoryV2)
+final class GrpcStudyRepositoryV2
+    with _GrpcTransportFacadeV1
+    implements domain.StudyRepositoryV2 {
   final StudyCatalogServiceClient _client;
+  @override
+  final domain.StudyErrorReporterV2 errorReporter;
 
-  const GrpcStudyRepositoryV1(this._client);
+  const GrpcStudyRepositoryV2(this._client, this.errorReporter);
 
   @override
-  Future<List<domain.StudyV1>> listStudies({bool includeArchived = false}) =>
-      _read(
-        () async => (await _client.listStudies(
-          study_proto.ListStudiesRequest(includeArchived: includeArchived),
-        )).studies.map(_studyFromProto).toList(growable: false),
-      );
+  Future<List<domain.StudyV1>> listStudies({
+    domain.ArchiveScopeV1 scope = domain.ArchiveScopeV1.activeOnly,
+  }) => _read(
+    () async => (await _client.listStudies(
+      study_proto.ListStudiesRequest(
+        includeArchived: scope == domain.ArchiveScopeV1.includeArchived,
+      ),
+    )).studies.map(_studyFromProto).toList(growable: false),
+  );
 
   @override
   Future<domain.StudyV1> createStudy(domain.StudyV1 study) => _createWrite(
@@ -209,7 +233,10 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
       ),
     ),
     () async {
-      final tree = await getMaterialTree(source.studyId, includeArchived: true);
+      final tree = await _getMaterialTree(
+        source.studyId,
+        includeArchived: true,
+      );
       final stored = tree.source
           .map((node) => node.source)
           .where((item) => item.id == source.id)
@@ -287,7 +314,7 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
           ),
         ),
         () async {
-          final tree = await getMaterialTree(
+          final tree = await _getMaterialTree(
             section.studyId,
             includeArchived: true,
           );
@@ -365,7 +392,10 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
       ),
     ),
     () async {
-      final tree = await getMaterialTree(lesson.studyId, includeArchived: true);
+      final tree = await _getMaterialTree(
+        lesson.studyId,
+        includeArchived: true,
+      );
       final stored = tree.source
           .expand((node) => node.lesson)
           .where((item) => item.id == lesson.id)
@@ -427,25 +457,31 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
   );
 
   @override
-  Future<domain.LessonV1> changeLessonStatus({
-    required domain.LessonV1 lesson,
-    required domain.LessonStatusV1 status,
-    bool acknowledgeOpenHomework = false,
-  }) => _write(
+  Future<domain.LessonV1> changeLessonStatus(
+    domain.LessonStatusChangeV1 change,
+  ) => _write(
     () async => _lessonFromProto(
       await _client.changeLessonStatus(
         study_proto.ChangeLessonStatusRequest(
-          id: lesson.id,
-          status: _lessonStatusToProto(status),
-          expectedVersion: Int64(lesson.version),
-          acknowledgeOpenHomework: acknowledgeOpenHomework,
+          id: change.lesson.id,
+          status: _lessonStatusToProto(change.status),
+          expectedVersion: Int64(change.lesson.version),
+          acknowledgeOpenHomework: change.acknowledgeOpenHomework,
         ),
       ),
     ),
   );
 
   @override
-  Future<domain.MaterialTreeV1> getMaterialTree(
+  Future<domain.MaterialTreeV1> getMaterialTree({
+    required domain.StudyV1 study,
+    domain.ArchiveScopeV1 scope = domain.ArchiveScopeV1.activeOnly,
+  }) => _getMaterialTree(
+    study.id,
+    includeArchived: scope == domain.ArchiveScopeV1.includeArchived,
+  );
+
+  Future<domain.MaterialTreeV1> _getMaterialTree(
     String studyId, {
     bool includeArchived = false,
   }) => _read(
@@ -461,7 +497,7 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
 
   @override
   Future<domain.MaterialTreeV1> reorderMaterial({
-    required String studyId,
+    required domain.StudyV1 study,
     Iterable<domain.ReorderItemV1> source = const [],
     Iterable<domain.ReorderItemV1> section = const [],
     Iterable<domain.ReorderItemV1> lesson = const [],
@@ -469,7 +505,7 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
     () async => _treeFromProto(
       await _client.reorderMaterial(
         study_proto.ReorderMaterialRequest(
-          studyId: studyId,
+          studyId: study.id,
           sources: source.map(_reorderToProto),
           sections: section.map(_reorderToProto),
           lessons: lesson.map(_reorderToProto),
@@ -479,24 +515,30 @@ final class GrpcStudyRepositoryV1 implements domain.StudyRepositoryV1 {
   );
 
   @override
-  Future<domain.StudyProgressV1> getDashboard(String studyId) => _read(
+  Future<domain.StudyProgressV1> getDashboard(domain.StudyV1 study) => _read(
     () async => _dashboardFromProto(
       await _client.getDashboard(
-        study_proto.GetDashboardRequest(studyId: studyId),
+        study_proto.GetDashboardRequest(studyId: study.id),
       ),
     ),
   );
 }
 
-@LazySingleton(as: domain.LessonContentRepositoryV1)
-final class GrpcLessonContentRepositoryV1
-    implements domain.LessonContentRepositoryV1 {
+@LazySingleton(as: domain.LessonContentRepositoryV2)
+final class GrpcLessonContentRepositoryV2
+    with _GrpcTransportFacadeV1
+    implements domain.LessonContentRepositoryV2 {
   final LessonContentServiceClient _client;
+  @override
+  final domain.StudyErrorReporterV2 errorReporter;
 
-  const GrpcLessonContentRepositoryV1(this._client);
+  const GrpcLessonContentRepositoryV2(this._client, this.errorReporter);
 
   @override
-  Future<domain.LessonWorkspaceV1> getWorkspace(String lessonId) => _read(
+  Future<domain.LessonWorkspaceV1> getWorkspace(domain.LessonV1 lesson) =>
+      _getWorkspace(lesson.id);
+
+  Future<domain.LessonWorkspaceV1> _getWorkspace(String lessonId) => _read(
     () async => _workspaceFromProto(
       await _client.getLessonWorkspace(
         content_proto.GetLessonWorkspaceRequest(lessonId: lessonId),
@@ -513,7 +555,7 @@ final class GrpcLessonContentRepositoryV1
           ),
         ),
         () async {
-          final workspace = await getWorkspace(block.lessonId);
+          final workspace = await _getWorkspace(block.lessonId);
           final stored = workspace.block
               .where((item) => item.id == block.id)
               .firstOrNull;
@@ -546,10 +588,8 @@ final class GrpcLessonContentRepositoryV1
   );
 
   @override
-  Future<void> deleteBlock(
-    domain.NoteBlockV1 block, {
-    required bool confirmed,
-  }) => _delete(block.id, block.version, confirmed, _client.deleteNoteBlock);
+  Future<domain.NoteBlockV1> deleteBlock(domain.NoteBlockV1 block) =>
+      _delete(block, block.id, block.version, _client.deleteNoteBlock);
 
   @override
   Future<domain.HomeworkTaskV1> createTask(domain.HomeworkTaskV1 task) =>
@@ -560,7 +600,7 @@ final class GrpcLessonContentRepositoryV1
           ),
         ),
         () async {
-          final workspace = await getWorkspace(task.lessonId);
+          final workspace = await _getWorkspace(task.lessonId);
           final stored = workspace.task
               .where((item) => item.id == task.id)
               .firstOrNull;
@@ -594,10 +634,8 @@ final class GrpcLessonContentRepositoryV1
       );
 
   @override
-  Future<void> deleteTask(
-    domain.HomeworkTaskV1 task, {
-    required bool confirmed,
-  }) => _delete(task.id, task.version, confirmed, _client.deleteHomeworkTask);
+  Future<domain.HomeworkTaskV1> deleteTask(domain.HomeworkTaskV1 task) =>
+      _delete(task, task.id, task.version, _client.deleteHomeworkTask);
 
   @override
   Future<domain.CodeFileV1> createFile(domain.CodeFileV1 file) => _createWrite(
@@ -607,7 +645,7 @@ final class GrpcLessonContentRepositoryV1
       ),
     ),
     () async {
-      final workspace = await getWorkspace(file.lessonId);
+      final workspace = await _getWorkspace(file.lessonId);
       final stored = workspace.file
           .where((item) => item.id == file.id)
           .firstOrNull;
@@ -639,13 +677,13 @@ final class GrpcLessonContentRepositoryV1
   );
 
   @override
-  Future<void> deleteFile(domain.CodeFileV1 file, {required bool confirmed}) =>
-      _delete(file.id, file.version, confirmed, _client.deleteCodeFile);
+  Future<domain.CodeFileV1> deleteFile(domain.CodeFileV1 file) =>
+      _delete(file, file.id, file.version, _client.deleteCodeFile);
 
-  Future<void> _delete(
+  Future<T> _delete<T>(
+    T deleted,
     String id,
     int version,
-    bool confirmed,
     ResponseFuture<content_proto.DeleteContentResponse> Function(
       content_proto.DeleteContentRequest, {
       CallOptions? options,
@@ -656,21 +694,22 @@ final class GrpcLessonContentRepositoryV1
       content_proto.DeleteContentRequest(
         id: id,
         expectedVersion: Int64(version),
-        confirmed: confirmed,
+        confirmed: true,
       ),
     );
+    return deleted;
   });
 
   @override
   Future<domain.LessonWorkspaceV1> reorderContent({
-    required String lessonId,
+    required domain.LessonV1 lesson,
     Iterable<domain.ReorderItemV1> block = const [],
     Iterable<domain.ReorderItemV1> task = const [],
   }) => _write(
     () async => _workspaceFromProto(
       await _client.reorderLessonContent(
         content_proto.ReorderLessonContentRequest(
-          lessonId: lessonId,
+          lessonId: lesson.id,
           blocks: block.map(_reorderToProto),
           tasks: task.map(_reorderToProto),
         ),
@@ -679,11 +718,15 @@ final class GrpcLessonContentRepositoryV1
   );
 }
 
-@LazySingleton(as: domain.KnowledgeRepositoryV1)
-final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
+@LazySingleton(as: domain.KnowledgeRepositoryV2)
+final class GrpcKnowledgeRepositoryV2
+    with _GrpcTransportFacadeV1
+    implements domain.KnowledgeRepositoryV2 {
   final KnowledgeServiceClient _client;
+  @override
+  final domain.StudyErrorReporterV2 errorReporter;
 
-  const GrpcKnowledgeRepositoryV1(this._client);
+  const GrpcKnowledgeRepositoryV2(this._client, this.errorReporter);
 
   @override
   Future<domain.ConceptV1> createConcept(domain.ConceptV1 concept) =>
@@ -696,7 +739,7 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
           ),
         ),
         () async {
-          final stored = (await searchConcepts(
+          final stored = (await _searchConcepts(
             concept.studyId,
             concept.title,
             includeArchived: true,
@@ -762,14 +805,16 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
   );
 
   @override
-  Future<domain.ConceptV1> addAlias(domain.ConceptV1 concept, String alias) =>
-      _alias(concept, alias, _client.addConceptAlias);
+  Future<domain.ConceptV1> addAlias(
+    domain.ConceptV1 concept,
+    domain.ConceptAliasV1 alias,
+  ) => _alias(concept, alias.value, _client.addConceptAlias);
 
   @override
   Future<domain.ConceptV1> removeAlias(
     domain.ConceptV1 concept,
-    String alias,
-  ) => _alias(concept, alias, _client.removeConceptAlias);
+    domain.ConceptAliasV1 alias,
+  ) => _alias(concept, alias.value, _client.removeConceptAlias);
 
   Future<domain.ConceptV1> _alias(
     domain.ConceptV1 concept,
@@ -794,14 +839,14 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
   @override
   Future<domain.ConceptV1> linkBlock(
     domain.ConceptV1 concept,
-    String blockId,
-  ) => _blockLink(concept, blockId, _client.linkBlockConcept);
+    domain.NoteBlockV1 block,
+  ) => _blockLink(concept, block.id, _client.linkBlockConcept);
 
   @override
   Future<domain.ConceptV1> unlinkBlock(
     domain.ConceptV1 concept,
-    String blockId,
-  ) => _blockLink(concept, blockId, _client.unlinkBlockConcept);
+    domain.NoteBlockV1 block,
+  ) => _blockLink(concept, block.id, _client.unlinkBlockConcept);
 
   Future<domain.ConceptV1> _blockLink(
     domain.ConceptV1 concept,
@@ -835,7 +880,7 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
       ),
     ),
     () async {
-      final graph = await getGraph(relation.studyId);
+      final graph = await _getGraph(relation.studyId);
       final stored = graph.relation
           .where((item) => item.id == relation.id)
           .firstOrNull;
@@ -853,21 +898,32 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
   );
 
   @override
-  Future<void> deleteRelation(
-    domain.ConceptRelationV1 relation, {
-    required bool confirmed,
-  }) => _write(() async {
+  Future<domain.ConceptRelationV1> deleteRelation(
+    domain.ConceptRelationV1 relation,
+  ) => _write(() async {
     await _client.deleteConceptRelation(
       knowledge_proto.DeleteConceptRelationRequest(
         id: relation.id,
         expectedVersion: Int64(relation.version),
-        confirmed: confirmed,
+        confirmed: true,
       ),
     );
+    return relation;
   });
 
   @override
-  Future<List<domain.ConceptV1>> searchConcepts(
+  Future<List<domain.ConceptV1>> searchConcepts({
+    required domain.StudyV1 study,
+    required domain.ConceptSearchV1 search,
+  }) => _searchConcepts(
+    study.id,
+    search.query,
+    includeArchived:
+        search.archiveScope == domain.ArchiveScopeV1.includeArchived,
+    limit: search.limit,
+  );
+
+  Future<List<domain.ConceptV1>> _searchConcepts(
     String studyId,
     String query, {
     bool includeArchived = false,
@@ -884,7 +940,12 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
   );
 
   @override
-  Future<domain.ConceptGraphV1> getGraph(
+  Future<domain.ConceptGraphV1> getGraph({
+    required domain.StudyV1 study,
+    domain.ConceptV1? selectedConcept,
+  }) => _getGraph(study.id, selectedConceptId: selectedConcept?.id);
+
+  Future<domain.ConceptGraphV1> _getGraph(
     String studyId, {
     String? selectedConceptId,
   }) => _read(() async {
@@ -903,10 +964,12 @@ final class GrpcKnowledgeRepositoryV1 implements domain.KnowledgeRepositoryV1 {
 }
 
 @lazySingleton
-final class GrpcExportGatewayV1 {
+final class GrpcExportGatewayV1 with _GrpcTransportFacadeV1 {
   final ExportServiceClient _client;
+  @override
+  final domain.StudyErrorReporterV2 errorReporter;
 
-  const GrpcExportGatewayV1(this._client);
+  const GrpcExportGatewayV1(this._client, this.errorReporter);
 
   Future<domain.ExportSnapshotV1> render(
     String studyId, {

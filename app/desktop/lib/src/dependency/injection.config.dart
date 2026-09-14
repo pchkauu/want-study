@@ -45,11 +45,8 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i1017.ClientChannel>(() => appModule.channel());
     gh.lazySingleton<_i361.Dio>(() => appModule.dio());
     gh.lazySingleton<_i798.AppRouter>(() => _i798.AppRouter());
-    gh.lazySingleton<_i1018.StudyErrorReporterV1>(
-      () => const _i351.ObservatoryStudyErrorReporterV1(),
-    );
-    gh.lazySingleton<_i1018.RepositoryPickerV1>(
-      () => const _i351.DesktopRepositoryPickerV1(),
+    gh.lazySingleton<_i1018.StudyErrorReporterV2>(
+      () => const _i351.ObservatoryStudyErrorReporterV2(),
     );
     gh.lazySingleton<_i751.StudyCatalogServiceClient>(
       () => appModule.studyCatalog(gh<_i1017.ClientChannel>()),
@@ -66,27 +63,41 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i1019.HealthClient>(
       () => appModule.health(gh<_i1017.ClientChannel>()),
     );
-    gh.lazySingleton<_i1018.LessonContentRepositoryV1>(
-      () => _i194.GrpcLessonContentRepositoryV1(
-        gh<_i891.LessonContentServiceClient>(),
+    gh.lazySingleton<_i1018.StudyRepositoryV2>(
+      () => _i194.GrpcStudyRepositoryV2(
+        gh<_i751.StudyCatalogServiceClient>(),
+        gh<_i1018.StudyErrorReporterV2>(),
       ),
     );
-    gh.lazySingleton<_i1018.KnowledgeRepositoryV1>(
-      () => _i194.GrpcKnowledgeRepositoryV1(gh<_i562.KnowledgeServiceClient>()),
+    gh.lazySingleton<_i1018.KnowledgeRepositoryV2>(
+      () => _i194.GrpcKnowledgeRepositoryV2(
+        gh<_i562.KnowledgeServiceClient>(),
+        gh<_i1018.StudyErrorReporterV2>(),
+      ),
+    );
+    gh.lazySingleton<_i1018.RepositoryPickerService>(
+      () => _i351.DesktopRepositoryPickerV2(gh<_i1018.StudyErrorReporterV2>()),
     );
     gh.lazySingleton<_i194.GrpcExportGatewayV1>(
-      () => _i194.GrpcExportGatewayV1(gh<_i239.ExportServiceClient>()),
+      () => _i194.GrpcExportGatewayV1(
+        gh<_i239.ExportServiceClient>(),
+        gh<_i1018.StudyErrorReporterV2>(),
+      ),
     );
     gh.lazySingleton<_i351.HealthGatewayV1>(
       () => _i351.HealthGatewayV1(gh<_i1019.HealthClient>()),
     );
-    gh.lazySingleton<_i1018.StudyRepositoryV1>(
-      () => _i194.GrpcStudyRepositoryV1(gh<_i751.StudyCatalogServiceClient>()),
+    gh.lazySingleton<_i1018.LessonContentRepositoryV2>(
+      () => _i194.GrpcLessonContentRepositoryV2(
+        gh<_i891.LessonContentServiceClient>(),
+        gh<_i1018.StudyErrorReporterV2>(),
+      ),
     );
-    gh.lazySingleton<_i1018.StudyPublicationRepositoryV1>(
-      () => _i960.GitPublicationRepositoryV1(
+    gh.lazySingleton<_i1018.StudyPublicationRepositoryV2>(
+      () => _i960.GitPublicationRepositoryV2(
         gh<_i194.GrpcExportGatewayV1>(),
-        gh<_i1018.StudyRepositoryV1>(),
+        gh<_i1018.StudyRepositoryV2>(),
+        gh<_i1018.StudyErrorReporterV2>(),
       ),
     );
     return this;

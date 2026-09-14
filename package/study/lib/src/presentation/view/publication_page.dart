@@ -1,18 +1,17 @@
 import 'package:bloc_effects/bloc_effects.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:study/src/application/bloc/publication_bloc.dart';
-import 'package:study/src/domain/model/study.dart';
-import 'package:study/src/domain/repository/study_publication_repository.dart';
-import 'package:study/src/presentation/widget/study_ui.dart';
+import 'package:study/src/application/_barrel.dart';
+import 'package:study/src/domain/_barrel.dart';
+import 'package:study/src/presentation/_barrel.dart';
 
 final class PublicationPageV1 extends StatefulWidget {
   final StudyV1 study;
-  final StudyPublicationRepositoryV1 repository;
+  final PublicationControllerV2 controller;
 
   const PublicationPageV1({
     required this.study,
-    required this.repository,
+    required this.controller,
     super.key,
   });
 
@@ -21,7 +20,7 @@ final class PublicationPageV1 extends StatefulWidget {
 }
 
 final class _PublicationPageV1State extends State<PublicationPageV1> {
-  late final PublicationBlocV1 _bloc;
+  late final PublicationControllerV2 _controller;
   final _message = TextEditingController(
     text: 'docs(study): update learning progress',
   );
@@ -29,7 +28,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   @override
   void initState() {
     super.initState();
-    _bloc = PublicationBlocV1(widget.repository);
+    _controller = widget.controller;
     _message.addListener(_onMessageChanged);
   }
 
@@ -37,7 +36,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   void didUpdateWidget(PublicationPageV1 oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.study.id != widget.study.id) {
-      _bloc.add(PublicationPreviewRequestedV1(widget.study));
+      _controller.add(PublicationPreviewRequestedV2(widget.study));
     }
   }
 
@@ -45,7 +44,6 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   void dispose() {
     _message.removeListener(_onMessageChanged);
     _message.dispose();
-    _bloc.close();
     super.dispose();
   }
 
@@ -54,13 +52,14 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   @override
   Widget build(BuildContext context) {
     return BlocProvider.value(
-      value: _bloc,
+      value: _controller,
       child:
           BlocEffectConsumer<
-            PublicationBlocV1,
-            PublicationBlocStateV1,
-            PublicationEffectV1
+            PublicationControllerV2,
+            PublicationStateV2,
+            PublicationEffectV2
           >(
+            bloc: _controller,
             listener: _onEffect,
             builder: (context, state) => Padding(
               padding: const EdgeInsets.all(24),
@@ -106,10 +105,10 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
     );
   }
 
-  Widget _buildControls(BuildContext context, PublicationBlocStateV1 state) {
+  Widget _buildControls(BuildContext context, PublicationStateV2 state) {
     final busy =
-        state.loadState == PublicationLoadStateV1.preparing ||
-        state.loadState == PublicationLoadStateV1.publishing;
+        state.loadState == PublicationLoadStateV2.preparing ||
+        state.loadState == PublicationLoadStateV2.publishing;
     final (statusLabel, statusIcon, statusColor) = _publicationStatus(
       context,
       state.loadState,
@@ -143,8 +142,9 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
             FilledButton.icon(
               onPressed: busy
                   ? null
-                  : () =>
-                        _bloc.add(PublicationPreviewRequestedV1(widget.study)),
+                  : () => _controller.add(
+                      PublicationPreviewRequestedV2(widget.study),
+                    ),
               icon: busy
                   ? const SizedBox.square(
                       dimension: 16,
@@ -153,10 +153,11 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
                   : const Icon(Icons.preview_outlined),
               label: const Text('Построить предпросмотр'),
             ),
-            if (state.loadState == PublicationLoadStateV1.pushFailed) ...[
+            if (state.loadState == PublicationLoadStateV2.pushFailed) ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: () => _bloc.add(const PublicationPushRetriedV1()),
+                onPressed: () =>
+                    _controller.add(const PublicationPushRetriedV2()),
                 icon: const Icon(Icons.cloud_upload_outlined),
                 label: const Text('Повторить push'),
               ),
@@ -173,7 +174,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
               const SizedBox(height: 10),
               FilledButton.icon(
                 onPressed:
-                    state.loadState == PublicationLoadStateV1.publishing ||
+                    state.loadState == PublicationLoadStateV2.publishing ||
                         _message.text.trim().isEmpty
                     ? null
                     : _confirm,
@@ -187,7 +188,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
     );
   }
 
-  Widget _buildDiff(BuildContext context, PublicationBlocStateV1 state) {
+  Widget _buildDiff(BuildContext context, PublicationStateV2 state) {
     final preview = state.preview;
     return StudySurface(
       padding: EdgeInsets.zero,
@@ -231,41 +232,41 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
 
   (String, IconData, Color) _publicationStatus(
     BuildContext context,
-    PublicationLoadStateV1 state,
+    PublicationLoadStateV2 state,
   ) {
     final scheme = Theme.of(context).colorScheme;
     return switch (state) {
-      PublicationLoadStateV1.initial => (
+      PublicationLoadStateV2.initial => (
         'Готово к проверке',
         Icons.shield_outlined,
         scheme.onSurfaceVariant,
       ),
-      PublicationLoadStateV1.preparing => (
+      PublicationLoadStateV2.preparing => (
         'Строится предпросмотр',
         Icons.sync,
         scheme.primary,
       ),
-      PublicationLoadStateV1.ready => (
+      PublicationLoadStateV2.ready => (
         'Предпросмотр готов',
         Icons.check_circle_outline,
         scheme.tertiary,
       ),
-      PublicationLoadStateV1.publishing => (
+      PublicationLoadStateV2.publishing => (
         'Публикация',
         Icons.cloud_upload_outlined,
         scheme.primary,
       ),
-      PublicationLoadStateV1.published => (
+      PublicationLoadStateV2.published => (
         'Опубликовано',
         Icons.cloud_done_outlined,
         scheme.tertiary,
       ),
-      PublicationLoadStateV1.pushFailed => (
+      PublicationLoadStateV2.pushFailed => (
         'Push не выполнен',
         Icons.cloud_off_outlined,
         studyWarningColor,
       ),
-      PublicationLoadStateV1.failed => (
+      PublicationLoadStateV2.failed => (
         'Проверка не выполнена',
         Icons.error_outline,
         scheme.error,
@@ -294,14 +295,18 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
       ),
     );
     if (confirmed ?? false) {
-      _bloc.add(PublicationConfirmedV1(_message.text.trim()));
+      _controller.add(
+        PublicationConfirmedV2(
+          PublicationCommitV1(message: _message.text.trim()),
+        ),
+      );
     }
   }
 
-  void _onEffect(BuildContext context, PublicationEffectV1 effect) {
+  void _onEffect(BuildContext context, PublicationEffectV2 effect) {
     final message = switch (effect) {
-      PublicationFailureEffectV1() => 'Публикация не выполнена',
-      PublicationSuccessEffectV1() => 'Изменения опубликованы',
+      PublicationFailureEffectV2() => 'Публикация не выполнена',
+      PublicationSuccessEffectV2() => 'Изменения опубликованы',
     };
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));

@@ -1,23 +1,20 @@
+import 'package:bloc_effects/bloc_effects.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:graphview/GraphView.dart';
-import 'package:study/src/application/safe_call.dart';
-import 'package:study/src/application/slug.dart';
-import 'package:study/src/domain/model/concept.dart';
-import 'package:study/src/domain/model/concept_graph.dart';
-import 'package:study/src/domain/model/concept_relation.dart';
-import 'package:study/src/domain/model/study_enum.dart';
-import 'package:study/src/domain/repository/knowledge_repository.dart';
-import 'package:study/src/presentation/widget/study_ui.dart';
+import 'package:study/src/application/_barrel.dart';
+import 'package:study/src/domain/_barrel.dart';
+import 'package:study/src/presentation/_barrel.dart';
 import 'package:uuid/uuid.dart';
 
 final class ConceptPageV1 extends StatefulWidget {
-  final String studyId;
-  final KnowledgeRepositoryV1 repository;
+  final StudyV1 study;
+  final ConceptControllerV1 controller;
 
   const ConceptPageV1({
-    required this.studyId,
-    required this.repository,
+    required this.study,
+    required this.controller,
     super.key,
   });
 
@@ -27,23 +24,18 @@ final class ConceptPageV1 extends StatefulWidget {
 
 final class _ConceptPageV1State extends State<ConceptPageV1> {
   final _search = TextEditingController();
-  ConceptGraphV1? _graph;
-  List<ConceptV1> _result = const [];
-  String? _selectedId;
-  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    widget.controller.add(ConceptStartedV1(widget.study));
   }
 
   @override
   void didUpdateWidget(ConceptPageV1 oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.studyId != widget.studyId) {
-      _selectedId = null;
-      _load();
+    if (oldWidget.study.id != widget.study.id) {
+      widget.controller.add(ConceptStartedV1(widget.study));
     }
   }
 
@@ -55,6 +47,24 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
 
   @override
   Widget build(BuildContext context) {
+    return BlocProvider.value(
+      value: widget.controller,
+      child:
+          BlocEffectConsumer<
+            ConceptControllerV1,
+            ConceptStateV1,
+            ConceptEffectV1
+          >(
+            bloc: widget.controller,
+            listener: (context, effect) {
+              if (effect is ConceptFailureEffectV1) _showFailure();
+            },
+            builder: _build,
+          ),
+    );
+  }
+
+  Widget _build(BuildContext context, ConceptStateV1 state) {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -83,18 +93,19 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
-            onChanged: (_) => _runSearch(),
+            onChanged: (value) =>
+                widget.controller.add(ConceptSearchChangedV1(value)),
           ),
-          if (_result.isNotEmpty) ...[
+          if (state.searchResult.isNotEmpty) ...[
             const SizedBox(height: 12),
             SizedBox(
               height: 42,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _result.length,
+                itemCount: state.searchResult.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
-                  final concept = _result[index];
+                  final concept = state.searchResult[index];
                   return ActionChip(
                     label: Text(
                       concept.isArchived
@@ -103,24 +114,25 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
                     ),
                     onPressed: concept.isArchived
                         ? () => _toggleArchive(concept)
-                        : () => _select(concept.id),
+                        : () => _select(concept),
                   );
                 },
               ),
             ),
           ],
           const SizedBox(height: 16),
-          Expanded(child: _body()),
+          Expanded(child: _body(state)),
         ],
       ),
     );
   }
 
-  Widget _body() {
-    if (_loading) {
+  Widget _body(ConceptStateV1 state) {
+    if (state.loadState == ConceptLoadStateV1.loading ||
+        state.loadState == ConceptLoadStateV1.initial) {
       return const StudySkeleton(compact: true);
     }
-    final graph = _graph;
+    final graph = state.graph;
     if (graph == null) {
       return StudyStateView(
         icon: Icons.cloud_off_outlined,
@@ -128,7 +140,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
         description: 'Проверьте локальный сервис и повторите попытку.',
         actionLabel: 'Повторить',
         actionIcon: Icons.refresh_rounded,
-        onAction: _load,
+        onAction: () => widget.controller.add(ConceptStartedV1(widget.study)),
       );
     }
     if (graph.concept.isEmpty) {
@@ -141,9 +153,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
       );
     }
     final view = _buildGraph(graph);
-    final selected = graph.concept
-        .where((concept) => concept.id == _selectedId)
-        .firstOrNull;
+    final selected = state.selectedConcept;
     final inspector = selected == null
         ? const _EmptyConceptInspector()
         : _ConceptDetails(
@@ -189,11 +199,11 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
                 builder: (node) {
                   final id = node.key?.value as String;
                   final concept = view.$2[id]!;
-                  final selected = concept.id == _selectedId;
+                  final selected = concept.id == state.selectedConcept?.id;
                   return InputChip(
                     selected: selected,
                     label: Text(concept.title),
-                    onPressed: () => _select(concept.id),
+                    onPressed: () => _select(concept),
                     onDeleted: selected ? () => _edit(concept) : null,
                     deleteIcon: const Icon(Icons.edit_outlined, size: 18),
                   );
@@ -243,87 +253,30 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     return (graph, concepts);
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final graph = await _safe(
-        'knowledge.graph',
-        () => widget.repository.getGraph(
-          widget.studyId,
-          selectedConceptId: _selectedId,
-        ),
-      );
-      if (mounted) {
-        setState(() {
-          _graph = graph;
-          _loading = false;
-        });
-      }
-    } on Object {
-      if (mounted) {
-        setState(() {
-          _graph = null;
-          _loading = false;
-        });
-        _showFailure();
-      }
-    }
-  }
-
-  Future<void> _runSearch() async {
-    try {
-      final result = await _safe(
-        'knowledge.search',
-        () => widget.repository.searchConcepts(
-          widget.studyId,
-          _search.text,
-          includeArchived: true,
-        ),
-      );
-      if (mounted) {
-        setState(() => _result = result);
-      }
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
-  }
-
-  Future<void> _select(String id) async {
-    _selectedId = id;
-    await _load();
-  }
+  void _select(ConceptV1 concept) =>
+      widget.controller.add(ConceptSelectedV1(concept));
 
   Future<void> _create() async {
     final value = await _showEditor();
     if (value == null) {
       return;
     }
-    try {
-      final id = const Uuid().v4();
-      await _safe(
-        'knowledge.createConcept',
-        () => widget.repository.createConcept(
-          ConceptV1(
-            id: id,
-            studyId: widget.studyId,
-            title: value.$1,
-            descriptionMarkdown: value.$2,
-            exportSlug: createExportSlugV1(
-              value.$1,
-              fallback: 'concept-${id.substring(0, 8)}',
-            ),
-            aliases: value.$3,
+    final id = const Uuid().v4();
+    widget.controller.add(
+      ConceptCreatedV1(
+        ConceptV1(
+          id: id,
+          studyId: widget.study.id,
+          title: value.$1,
+          descriptionMarkdown: value.$2,
+          exportSlug: createExportSlugV1(
+            value.$1,
+            fallback: 'concept-${id.substring(0, 8)}',
           ),
+          aliases: value.$3,
         ),
-      );
-      await _load();
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _edit(ConceptV1 concept) async {
@@ -331,52 +284,23 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     if (value == null) {
       return;
     }
-    try {
-      await _safe(
-        'knowledge.updateConcept',
-        () => widget.repository.updateConcept(
-          concept.copyWith(
-            title: value.$1,
-            descriptionMarkdown: value.$2,
-            aliases: value.$3,
-          ),
+    widget.controller.add(
+      ConceptUpdatedV1(
+        concept.copyWith(
+          title: value.$1,
+          descriptionMarkdown: value.$2,
+          aliases: value.$3,
         ),
-      );
-      await _load();
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _toggleArchive(ConceptV1 concept) async {
-    try {
-      if (concept.isArchived) {
-        await _safe(
-          'knowledge.restoreConcept',
-          () => widget.repository.restoreConcept(concept),
-        );
-      } else {
-        await _safe(
-          'knowledge.archiveConcept',
-          () => widget.repository.archiveConcept(concept),
-        );
-        if (_selectedId == concept.id) {
-          _selectedId = null;
-        }
-      }
-      await _runSearch();
-      await _load();
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
+    widget.controller.add(ConceptArchiveChangedV1(concept));
   }
 
   Future<void> _addRelation(ConceptV1 source) async {
-    final graph = _graph;
+    final graph = widget.controller.state.graph;
     if (graph == null) {
       return;
     }
@@ -437,7 +361,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
                 context,
                 ConceptRelationV1(
                   id: const Uuid().v4(),
-                  studyId: widget.studyId,
+                  studyId: widget.study.id,
                   sourceConceptId: source.id,
                   targetConceptId: targetId,
                   type: type,
@@ -452,32 +376,11 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     if (relation == null) {
       return;
     }
-    try {
-      await _safe(
-        'knowledge.putRelation',
-        () => widget.repository.putRelation(relation),
-      );
-      await _load();
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
+    widget.controller.add(ConceptRelationAddedV1(relation));
   }
 
-  Future<void> _deleteRelation(ConceptRelationV1 relation) async {
-    try {
-      await _safe(
-        'knowledge.deleteRelation',
-        () => widget.repository.deleteRelation(relation, confirmed: true),
-      );
-      await _load();
-    } on Object {
-      if (mounted) {
-        _showFailure();
-      }
-    }
-  }
+  void _deleteRelation(ConceptRelationV1 relation) =>
+      widget.controller.add(ConceptRelationDeletedV1(relation));
 
   Future<(String, String, List<String>)?> _showEditor({
     ConceptV1? concept,
@@ -559,11 +462,6 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Не удалось выполнить операцию')),
     );
-  }
-
-  Future<T> _safe<T>(String operation, Future<T> Function() call) async {
-    final result = await studySafeCallV1(operation, call);
-    return result.fold((error) => throw error, (value) => value);
   }
 }
 

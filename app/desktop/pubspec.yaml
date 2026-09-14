@@ -13,6 +13,7 @@ dependencies:
   bloc_concurrency: ^0.3.0
   crypto: ^3.0.6
   dio: ^5.11.1
+  domain_error: ^3.0.0
   file_selector: ^1.0.4
   fixnum: ^1.1.1
   flutter:
@@ -22,7 +23,7 @@ dependencies:
   grpc: ^5.1.0
   injectable: ^3.0.0
   launch_mode: ^0.2.0
-  observatory: 3.0.1
+  observatory: 3.0.2
   path: ^1.9.1
   protobuf: ^6.1.0
   study:

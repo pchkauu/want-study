@@ -1,42 +1,25 @@
 import 'package:bloc_effects/bloc_effects.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:study/src/application/bloc/catalog_bloc.dart';
-import 'package:study/src/application/slug.dart';
-import 'package:study/src/config/config.dart';
-import 'package:study/src/dependency/repository_picker.dart';
-import 'package:study/src/domain/model/learning_source.dart';
-import 'package:study/src/domain/model/lesson.dart';
-import 'package:study/src/domain/model/material_tree.dart';
-import 'package:study/src/domain/model/section.dart';
-import 'package:study/src/domain/model/study.dart';
-import 'package:study/src/domain/model/study_enum.dart';
-import 'package:study/src/domain/model/study_progress.dart';
-import 'package:study/src/domain/repository/knowledge_repository.dart';
-import 'package:study/src/domain/repository/lesson_content_repository.dart';
-import 'package:study/src/domain/repository/study_publication_repository.dart';
-import 'package:study/src/domain/repository/study_repository.dart';
-import 'package:study/src/presentation/view/concept_page.dart';
-import 'package:study/src/presentation/view/lesson_editor_page.dart';
-import 'package:study/src/presentation/view/publication_page.dart';
-import 'package:study/src/presentation/widget/study_ui.dart';
+import 'package:study/src/application/_barrel.dart';
+import 'package:study/src/config/_barrel.dart';
+import 'package:study/src/domain/_barrel.dart';
+import 'package:study/src/presentation/_barrel.dart';
 import 'package:uuid/uuid.dart';
 
 final class StudyRootPageV1 extends StatefulWidget {
   final Config config;
-  final StudyRepositoryV1 studyRepository;
-  final LessonContentRepositoryV1 lessonContentRepository;
-  final KnowledgeRepositoryV1 knowledgeRepository;
-  final StudyPublicationRepositoryV1 publicationRepository;
-  final RepositoryPickerV1 repositoryPicker;
+  final CatalogControllerV2 catalogController;
+  final LessonEditorControllerV2 lessonEditorController;
+  final ConceptControllerV1 conceptController;
+  final PublicationControllerV2 publicationController;
 
   const StudyRootPageV1({
     required this.config,
-    required this.studyRepository,
-    required this.lessonContentRepository,
-    required this.knowledgeRepository,
-    required this.publicationRepository,
-    required this.repositoryPicker,
+    required this.catalogController,
+    required this.lessonEditorController,
+    required this.conceptController,
+    required this.publicationController,
     super.key,
   });
 
@@ -45,127 +28,131 @@ final class StudyRootPageV1 extends StatefulWidget {
 }
 
 final class _StudyRootPageV1State extends State<StudyRootPageV1> {
-  late final CatalogBlocV1 _catalogBloc;
+  late final CatalogControllerV2 _catalogController;
   var _selectedPage = 0;
 
   @override
   void initState() {
     super.initState();
-    _catalogBloc = CatalogBlocV1(widget.studyRepository)
-      ..add(const CatalogStartedV1());
-  }
-
-  @override
-  void dispose() {
-    _catalogBloc.close();
-    super.dispose();
+    _catalogController = widget.catalogController;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _catalogController.init();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider.value(
-      value: _catalogBloc,
-      child: BlocEffectConsumer<CatalogBlocV1, CatalogStateV1, CatalogEffectV1>(
+      value: _catalogController,
+      child: BlocEffectListener<CatalogControllerV2, CatalogEffectV2>(
+        effector: _catalogController,
         listener: _onEffect,
-        builder: (context, state) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final extended = constraints.maxWidth >= 1200;
-              final disableAnimations = MediaQuery.disableAnimationsOf(context);
-              return Scaffold(
-                body: Row(
-                  children: [
-                    NavigationRail(
-                      extended: extended,
-                      minWidth: 88,
-                      minExtendedWidth: 244,
-                      groupAlignment: -0.58,
-                      selectedIndex: _selectedPage,
-                      onDestinationSelected: (value) {
-                        setState(() => _selectedPage = value);
-                      },
-                      leading: _NavigationBrand(extended: extended),
-                      destinations: const [
-                        NavigationRailDestination(
-                          icon: Icon(Icons.space_dashboard_outlined),
-                          selectedIcon: Icon(Icons.space_dashboard_rounded),
-                          label: Text('Обзор'),
-                        ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.menu_book_outlined),
-                          selectedIcon: Icon(Icons.menu_book_rounded),
-                          label: Text('Материал'),
-                        ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.hub_outlined),
-                          selectedIcon: Icon(Icons.hub_rounded),
-                          label: Text('Понятия'),
-                        ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.publish_outlined),
-                          selectedIcon: Icon(Icons.publish_rounded),
-                          label: Text('Публикация'),
-                        ),
-                      ],
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: disableAnimations
-                            ? Duration.zero
-                            : const Duration(milliseconds: 200),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        child: KeyedSubtree(
-                          key: ValueKey(_selectedPage),
-                          child: _buildContent(context, state),
+        child: BlocBuilder<CatalogControllerV2, CatalogStateV2>(
+          bloc: _catalogController,
+          builder: (context, state) {
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final extended = constraints.maxWidth >= 1200;
+                final disableAnimations = MediaQuery.disableAnimationsOf(
+                  context,
+                );
+                return Scaffold(
+                  body: Row(
+                    children: [
+                      NavigationRail(
+                        extended: extended,
+                        minWidth: 88,
+                        minExtendedWidth: 244,
+                        groupAlignment: -0.58,
+                        selectedIndex: _selectedPage,
+                        onDestinationSelected: (value) {
+                          setState(() => _selectedPage = value);
+                        },
+                        leading: _NavigationBrand(extended: extended),
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.space_dashboard_outlined),
+                            selectedIcon: Icon(Icons.space_dashboard_rounded),
+                            label: Text('Обзор'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.menu_book_outlined),
+                            selectedIcon: Icon(Icons.menu_book_rounded),
+                            label: Text('Материал'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.hub_outlined),
+                            selectedIcon: Icon(Icons.hub_rounded),
+                            label: Text('Понятия'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.publish_outlined),
+                            selectedIcon: Icon(Icons.publish_rounded),
+                            label: Text('Публикация'),
+                          ),
+                        ],
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: disableAnimations
+                              ? Duration.zero
+                              : const Duration(milliseconds: 200),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: KeyedSubtree(
+                            key: ValueKey(_selectedPage),
+                            child: _buildContent(context, state),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, CatalogStateV1 state) {
-    if (state.loadState == CatalogLoadStateV1.loading && state.study.isEmpty) {
+  Widget _buildContent(BuildContext context, CatalogStateV2 state) {
+    if (state.loadState == CatalogLoadStateV2.loading && state.study.isEmpty) {
       return const StudySkeleton();
     }
-    if (state.loadState == CatalogLoadStateV1.failed && state.study.isEmpty) {
+    if (state.loadState == CatalogLoadStateV2.failed && state.study.isEmpty) {
       return StudyStateView(
         icon: Icons.cloud_off_outlined,
         title: 'Не удалось загрузить обучение',
         description: 'Проверьте локальный сервис и повторите попытку.',
         actionLabel: 'Повторить',
         actionIcon: Icons.refresh_rounded,
-        onAction: () => _catalogBloc.add(const CatalogStartedV1()),
+        onAction: _catalogController.reload,
       );
     }
     if (state.study.isEmpty) {
       return _EmptyStudyView(onCreate: () => _createStudy(context));
     }
-    final selectedStudy = state.study
-        .where((study) => study.id == state.selectedStudyId)
-        .firstOrNull;
+    final selectedStudy = state.selectedStudy;
     return Column(
       children: [
         _StudyHeader(
           study: state.study,
           selectedStudyId: state.selectedStudyId,
-          onSelected: (id) => _catalogBloc.add(CatalogStudySelectedV1(id)),
+          onSelected: (id) => _catalogController.add(
+            CatalogStudySelectedV2(
+              state.study.firstWhere((study) => study.id == id),
+            ),
+          ),
           onCreate: () => _createStudy(context),
           onEdit: selectedStudy == null
               ? null
               : () => _createStudy(context, selectedStudy),
           onArchive: selectedStudy == null
               ? null
-              : () => _catalogBloc.add(
-                  CatalogItemArchiveChangedV1(selectedStudy),
+              : () => _catalogController.add(
+                  CatalogStudyArchiveChangedV2(selectedStudy),
                 ),
         ),
         const Divider(height: 1),
@@ -195,27 +182,27 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                 lesson,
               ),
               onOpenLesson: (lesson) => _openLesson(context, lesson),
-              onArchiveItem: (item) =>
-                  _catalogBloc.add(CatalogItemArchiveChangedV1(item)),
-              onMoveItem: (item, offset) =>
-                  _catalogBloc.add(CatalogItemMoveRequestedV1(item, offset)),
-              onStatusChanged: (lesson, status) => _catalogBloc.add(
-                CatalogLessonStatusChangedV1(lesson: lesson, status: status),
+              onArchiveItem: _archiveItem,
+              onMoveItem: _moveItem,
+              onStatusChanged: (lesson, status) => _catalogController.add(
+                CatalogLessonStatusChangedV2(
+                  LessonStatusChangeV1(lesson: lesson, status: status),
+                ),
               ),
             ),
             2 =>
               selectedStudy == null
                   ? const SizedBox.shrink()
                   : ConceptPageV1(
-                      studyId: selectedStudy.id,
-                      repository: widget.knowledgeRepository,
+                      study: selectedStudy,
+                      controller: widget.conceptController,
                     ),
             _ =>
               selectedStudy == null
                   ? const SizedBox.shrink()
                   : PublicationPageV1(
                       study: selectedStudy,
-                      repository: widget.publicationRepository,
+                      controller: widget.publicationController,
                     ),
           },
         ),
@@ -223,13 +210,13 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     );
   }
 
-  Future<void> _onEffect(BuildContext context, CatalogEffectV1 effect) async {
+  Future<void> _onEffect(BuildContext context, CatalogEffectV2 effect) async {
     switch (effect) {
-      case CatalogFailureEffectV1():
+      case CatalogFailureEffectV2():
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Не удалось выполнить операцию')),
         );
-      case ConfirmOpenHomeworkEffectV1():
+      case ConfirmOpenHomeworkEffectV2():
         final lesson = _findLesson(effect.lessonId);
         if (lesson == null) {
           return;
@@ -254,11 +241,13 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
           ),
         );
         if (confirmed ?? false) {
-          _catalogBloc.add(
-            CatalogLessonStatusChangedV1(
-              lesson: lesson,
-              status: LessonStatusV1.mastered,
-              acknowledgeOpenHomework: true,
+          _catalogController.add(
+            CatalogLessonStatusChangedV2(
+              LessonStatusChangeV1(
+                lesson: lesson,
+                status: LessonStatusV1.mastered,
+                acknowledgeOpenHomework: true,
+              ),
             ),
           );
         }
@@ -267,7 +256,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
 
   LessonV1? _findLesson(String id) {
     for (final source
-        in _catalogBloc.state.tree?.source ?? const <LearningSourceNodeV1>[]) {
+        in _catalogController.state.tree?.source ??
+            const <LearningSourceNodeV1>[]) {
       for (final lesson in source.lesson) {
         if (lesson.id == id) {
           return lesson;
@@ -315,9 +305,9 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                     ),
                     OutlinedButton.icon(
                       onPressed: () async {
-                        final path = await widget.repositoryPicker
+                        final selection = await _catalogController
                             .pickRepository();
-                        if (path != null) {
+                        if (selection.path case final path?) {
                           setDialogState(() => repositoryPath = path);
                         }
                       },
@@ -363,10 +353,10 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     title.dispose();
     goal.dispose();
     if (result != null) {
-      _catalogBloc.add(
+      _catalogController.add(
         existing == null
-            ? CatalogStudyCreatedV1(result)
-            : CatalogItemUpdatedV1(result),
+            ? CatalogStudyCreatedV2(result)
+            : CatalogStudyUpdatedV2(result),
       );
     }
   }
@@ -450,7 +440,12 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                                 fallback: 'source-${id.substring(0, 8)}',
                               ),
                               position:
-                                  _catalogBloc.state.tree?.source.length ?? 0,
+                                  _catalogController
+                                      .state
+                                      .tree
+                                      ?.source
+                                      .length ??
+                                  0,
                             ),
                       );
                     },
@@ -464,10 +459,10 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     author.dispose();
     url.dispose();
     if (result != null) {
-      _catalogBloc.add(
+      _catalogController.add(
         existing == null
-            ? CatalogSourceCreatedV1(result)
-            : CatalogItemUpdatedV1(result),
+            ? CatalogSourceCreatedV2(result)
+            : CatalogSourceUpdatedV2(result),
       );
     }
   }
@@ -518,10 +513,10 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     );
     title.dispose();
     if (result != null) {
-      _catalogBloc.add(
+      _catalogController.add(
         existing == null
-            ? CatalogSectionCreatedV1(result)
-            : CatalogItemUpdatedV1(result),
+            ? CatalogSectionCreatedV2(result)
+            : CatalogSectionUpdatedV2(result),
       );
     }
   }
@@ -614,10 +609,10 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     sourcePosition.dispose();
     url.dispose();
     if (result != null) {
-      _catalogBloc.add(
+      _catalogController.add(
         existing == null
-            ? CatalogLessonCreatedV1(result)
-            : CatalogItemUpdatedV1(result),
+            ? CatalogLessonCreatedV2(result)
+            : CatalogLessonUpdatedV2(result),
       );
     }
   }
@@ -626,13 +621,34 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => LessonEditorPageV1(
+          study: _catalogController.state.selectedStudy!,
           lesson: lesson,
-          repository: widget.lessonContentRepository,
-          knowledgeRepository: widget.knowledgeRepository,
-          autosaveDelay: widget.config.autosaveDelay,
+          controller: widget.lessonEditorController,
         ),
       ),
     );
+  }
+
+  void _archiveItem(Object item) {
+    switch (item) {
+      case final LearningSourceV1 value:
+        _catalogController.add(CatalogSourceArchiveChangedV2(value));
+      case final SectionV1 value:
+        _catalogController.add(CatalogSectionArchiveChangedV2(value));
+      case final LessonV1 value:
+        _catalogController.add(CatalogLessonArchiveChangedV2(value));
+    }
+  }
+
+  void _moveItem(Object item, int offset) {
+    switch (item) {
+      case final LearningSourceV1 value:
+        _catalogController.add(CatalogSourceMoveRequestedV2(value, offset));
+      case final SectionV1 value:
+        _catalogController.add(CatalogSectionMoveRequestedV2(value, offset));
+      case final LessonV1 value:
+        _catalogController.add(CatalogLessonMoveRequestedV2(value, offset));
+    }
   }
 }
 

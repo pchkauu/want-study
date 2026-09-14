@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:domain_error/domain_error.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mocktail/mocktail.dart';
@@ -22,12 +23,12 @@ void main() {
     };
 
     expect(
-      GitPublicationRepositoryV1.matchesCppStudyLegacySnapshotV1(hashes),
+      GitPublicationRepositoryV2.matchesCppStudyLegacySnapshotV1(hashes),
       isTrue,
     );
     hashes['README.md'] = 'changed';
     expect(
-      GitPublicationRepositoryV1.matchesCppStudyLegacySnapshotV1(hashes),
+      GitPublicationRepositoryV2.matchesCppStudyLegacySnapshotV1(hashes),
       isFalse,
     );
   });
@@ -103,11 +104,13 @@ void main() {
       contentRevision: 2,
     );
     final studyRepository = _StudyRepositoryMock();
-    when(() => studyRepository.getMaterialTree('study-id'))
+    when(() => studyRepository.getMaterialTree(study: study))
         .thenAnswer((_) async => MaterialTreeV1(study: study));
-    final publication = GitPublicationRepositoryV1(
-      GrpcExportGatewayV1(ExportServiceClient(channel)),
+    const errorReporter = _ErrorReporter();
+    final publication = GitPublicationRepositoryV2(
+      GrpcExportGatewayV1(ExportServiceClient(channel), errorReporter),
       studyRepository,
+      errorReporter,
     );
 
     final preview = await publication.preview(study: study, snapshot: snapshot);
@@ -118,7 +121,7 @@ void main() {
     final published = await publication.publish(
       study: study,
       snapshot: snapshot,
-      commitMessage: 'docs(study): test publication',
+      commit: PublicationCommitV1(message: 'docs(study): test publication'),
     );
     expect(published.state, PublicationStateV1.published);
     expect(published.commitSha, isNotEmpty);
@@ -144,7 +147,32 @@ void main() {
   });
 }
 
-final class _StudyRepositoryMock extends Mock implements StudyRepositoryV1 {}
+final class _StudyRepositoryMock extends Mock implements StudyRepositoryV2 {}
+
+final class _ErrorReporter implements StudyErrorReporterV2 {
+  const _ErrorReporter();
+
+  @override
+  Future<void> reportDomainError({
+    required StudyErrorContextV1 context,
+    required DomainError error,
+    required StackTrace stackTrace,
+  }) async {}
+
+  @override
+  Future<void> reportObserverError({
+    required StudyErrorContextV1 context,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {}
+
+  @override
+  Future<void> reportRawError({
+    required StudyErrorContextV1 context,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {}
+}
 
 Future<String> _git(String workingDirectory, List<String> arguments) async {
   final result = await Process.run(

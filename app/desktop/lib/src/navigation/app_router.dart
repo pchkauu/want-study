@@ -122,7 +122,7 @@ final class _StudyScreenState extends State<StudyScreen> {
         }
         return Stack(
           children: [
-            Positioned.fill(child: getIt<StudyFeatureFacadeV1>().buildRoot()),
+            Positioned.fill(child: getIt<StudyFeatureFacadeV2>().buildRoot()),
             Positioned(
               left: MediaQuery.sizeOf(context).width >= 1200 ? 20 : 14,
               bottom: 18,

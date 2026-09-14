@@ -724,10 +724,10 @@ packages:
     dependency: transitive
     description:
       name: observatory
-      sha256: fa3de17725f36d1ca08ccf87d4cca9eb873ecee24764fc331d44796a852ff3da
+      sha256: ea2c05d0d7bae606439c867f9ad813bfce6df3184a3c9a6e5c1dbe5dcdef7664
       url: "https://pub.dev"
     source: hosted
-    version: "3.0.1"
+    version: "3.0.2"
   package_config:
     dependency: transitive
     description:

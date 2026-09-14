@@ -1,71 +1,103 @@
 import 'dart:async';
 
+import 'package:domain_error/domain_error.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:launch_mode/launch_mode.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:study/study.dart';
 import 'package:want_study_desktop/src/navigation/app_router.dart';
 import 'package:want_study_desktop/src/theme/app_theme.dart';
 
-final class _StudyRepository extends Mock implements StudyRepositoryV1 {}
+final class _StudyRepository extends Mock implements StudyRepositoryV2 {}
 
 final class _LessonRepository extends Mock
-    implements LessonContentRepositoryV1 {}
+    implements LessonContentRepositoryV2 {}
 
 final class _KnowledgeRepository extends Mock
-    implements KnowledgeRepositoryV1 {}
+    implements KnowledgeRepositoryV2 {}
 
 final class _PublicationRepository extends Mock
-    implements StudyPublicationRepositoryV1 {}
+    implements StudyPublicationRepositoryV2 {}
 
-final class _RepositoryPicker implements RepositoryPickerV1 {
-  const _RepositoryPicker();
+final class _RepositoryPicker extends Mock implements RepositoryPickerService {}
 
-  @override
-  Future<String?> pickRepository() async => null;
-}
-
-final class _ErrorReporter implements StudyErrorReporterV1 {
+final class _ErrorReporter implements StudyErrorReporterV2 {
   const _ErrorReporter();
 
   @override
-  Future<void> reportDomainError(
-    String operation,
-    DomainError error,
-    StackTrace stackTrace,
-  ) async {}
+  Future<void> reportDomainError({
+    required StudyErrorContextV1 context,
+    required DomainError error,
+    required StackTrace stackTrace,
+  }) async {}
 
   @override
-  Future<void> reportRawError(
-    String operation,
-    Object error,
-    StackTrace stackTrace,
-  ) async {}
+  Future<void> reportRawError({
+    required StudyErrorContextV1 context,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {}
+
+  @override
+  Future<void> reportObserverError({
+    required StudyErrorContextV1 context,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {}
 }
 
 void main() {
-  setUpAll(() async {
-    await initPackage(
-      config: const Config(),
-      dependencies: Dependencies(
-        studyRepository: _StudyRepository(),
-        lessonContentRepository: _LessonRepository(),
-        knowledgeRepository: _KnowledgeRepository(),
-        publicationRepository: _PublicationRepository(),
-        errorReporter: const _ErrorReporter(),
-        repositoryPicker: const _RepositoryPicker(),
+  setUpAll(() {
+    LaunchMode.initializeAutomatically();
+    registerFallbackValue(
+      LessonStatusChangeV1(
+        lesson: _studyingLesson,
+        status: LessonStatusV1.mastered,
       ),
     );
+  });
+
+  testWidgets('loading, empty and catalog error use stable states', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    final studies = Completer<List<StudyV1>>();
+    when(
+      () =>
+          repositories.study.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) => studies.future);
+    unawaited(repositories.facade.catalogController.init());
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await _pumpCatalogState(tester, repositories, 'loading');
+    expect(find.bySemanticsLabel('Загрузка'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    studies.complete(const []);
+    await _pumpCatalogState(tester, repositories, 'ready');
+    expect(find.text('Начните новое обучение'), findsOneWidget);
+
+    when(
+      () =>
+          repositories.study.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenThrow(const UnavailableErrorV1());
+    repositories.facade.catalogController.reload();
+    await _pumpCatalogState(tester, repositories, 'failed');
+    expect(find.text('Не удалось загрузить обучение'), findsOneWidget);
+
+    _stubCatalog(repositories.study);
+    repositories.facade.catalogController.reload();
+    await _pumpCatalogState(tester, repositories, 'ready');
   });
 
   testWidgets('dark shell adapts at 1200 px and renders overview', (
     tester,
   ) async {
-    final repositories = _Repositories();
+    final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
     await _setSurface(tester, const Size(1440, 900));
     await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
-    await tester.pumpAndSettle();
+    await _pumpCatalogState(tester, repositories, 'ready');
 
     expect(
       Theme.of(tester.element(find.byType(Scaffold))).brightness,
@@ -123,21 +155,15 @@ void main() {
   testWidgets('material and lesson editor fit 1024x720 at text scale 1.25', (
     tester,
   ) async {
-    final repositories = _Repositories();
+    final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
-    when(() => repositories.lesson.getWorkspace('lesson-studying'))
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
         .thenAnswer((_) async => _workspace());
     final save = Completer<NoteBlockV1>();
     when(() => repositories.lesson.updateBlock(_note()))
         .thenAnswer((_) => save.future);
     await _setSurface(tester, const Size(1024, 720));
-    await tester.pumpWidget(
-      _testApp(
-        repositories
-            .facadeWith(config: const Config(autosaveDelay: Duration.zero))
-            .buildRoot(),
-      ),
-    );
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.menu_book_outlined));
@@ -183,25 +209,20 @@ void main() {
   });
 
   testWidgets('mastered status asks about open homework', (tester) async {
-    final repositories = _Repositories();
+    final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
-    when(
-      () => repositories.study.changeLessonStatus(
-        lesson: _studyingLesson,
-        status: LessonStatusV1.mastered,
-        acknowledgeOpenHomework: any(named: 'acknowledgeOpenHomework'),
-      ),
-    ).thenAnswer((invocation) async {
-      final acknowledged =
-          invocation.namedArguments[#acknowledgeOpenHomework] as bool;
-      if (!acknowledged) {
-        throw const OpenHomeworkErrorV1();
-      }
-      return _studyingLesson.copyWith(
-        status: LessonStatusV1.mastered,
-        masteredAt: () => DateTime.utc(2026, 9, 14),
-      );
-    });
+    when(() => repositories.study.changeLessonStatus(any()))
+        .thenAnswer((invocation) async {
+          final change =
+              invocation.positionalArguments.single as LessonStatusChangeV1;
+          if (!change.acknowledgeOpenHomework) {
+            throw const OpenHomeworkErrorV1();
+          }
+          return _studyingLesson.copyWith(
+            status: LessonStatusV1.mastered,
+            masteredAt: () => DateTime.utc(2026, 9, 14),
+          );
+        });
     await _setSurface(tester, const Size(1024, 720));
     await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
     await tester.pumpAndSettle();
@@ -218,20 +239,22 @@ void main() {
 
     verify(
       () => repositories.study.changeLessonStatus(
-        lesson: _studyingLesson,
-        status: LessonStatusV1.mastered,
-        acknowledgeOpenHomework: true,
+        LessonStatusChangeV1(
+          lesson: _studyingLesson,
+          status: LessonStatusV1.mastered,
+          acknowledgeOpenHomework: true,
+        ),
       ),
     ).called(1);
   });
 
   testWidgets('concept graph opens inspector', (tester) async {
-    final repositories = _Repositories();
+    final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
     when(
       () => repositories.knowledge.getGraph(
-        'study-1',
-        selectedConceptId: any(named: 'selectedConceptId'),
+        study: _study,
+        selectedConcept: any(named: 'selectedConcept'),
       ),
     ).thenAnswer((_) async => _conceptGraph());
     await _setSurface(tester, const Size(1024, 720));
@@ -252,25 +275,21 @@ void main() {
   testWidgets('publication shows preparing, push failure, success and error', (
     tester,
   ) async {
-    final repositories = _Repositories();
+    final repositories = await _repositoriesForTest();
     _stubCatalog(repositories.study);
     final snapshot = _snapshot();
     final snapshotResult = Completer<ExportSnapshotV1>();
     final publishResult = Completer<PublicationV1>();
     final retryResult = Completer<PublicationV1>();
     var renderCount = 0;
-    when(
-      () => repositories.publication.renderStudyExport(
-        'study-1',
-        expectedContentRevision: 7,
-      ),
-    ).thenAnswer((_) {
-      renderCount++;
-      if (renderCount == 1) {
-        return snapshotResult.future;
-      }
-      throw const UnavailableErrorV1();
-    });
+    when(() => repositories.publication.renderStudyExport(_study))
+        .thenAnswer((_) {
+          renderCount++;
+          if (renderCount == 1) {
+            return snapshotResult.future;
+          }
+          throw const UnavailableErrorV1();
+        });
     when(
       () => repositories.publication.preview(study: _study, snapshot: snapshot),
     ).thenAnswer((_) async => _preview());
@@ -278,7 +297,9 @@ void main() {
       () => repositories.publication.publish(
         study: _study,
         snapshot: snapshot,
-        commitMessage: 'docs(study): update learning progress',
+        commit: PublicationCommitV1(
+          message: 'docs(study): update learning progress',
+        ),
       ),
     ).thenAnswer((_) => publishResult.future);
     when(() => repositories.publication.retryPush(_pushFailedPublication()))
@@ -317,32 +338,6 @@ void main() {
     expect(find.text('Проверка не выполнена'), findsOneWidget);
   });
 
-  testWidgets('loading, empty and catalog error use stable states', (
-    tester,
-  ) async {
-    final loadingRepositories = _Repositories();
-    final studies = Completer<List<StudyV1>>();
-    when(() => loadingRepositories.study.listStudies(includeArchived: true))
-        .thenAnswer((_) => studies.future);
-    await _setSurface(tester, const Size(1024, 720));
-    await tester.pumpWidget(_testApp(loadingRepositories.facade.buildRoot()));
-    await tester.pump();
-    expect(find.bySemanticsLabel('Загрузка'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    studies.complete(const []);
-    await tester.pumpAndSettle();
-    expect(find.text('Начните новое обучение'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-
-    final failedRepositories = _Repositories();
-    when(() => failedRepositories.study.listStudies(includeArchived: true))
-        .thenThrow(const UnavailableErrorV1());
-    await tester.pumpWidget(_testApp(failedRepositories.facade.buildRoot()));
-    await tester.pumpAndSettle();
-    expect(find.text('Не удалось загрузить обучение'), findsOneWidget);
-  });
-
   testWidgets('unavailable API has dark diagnostic state', (tester) async {
     final health = Completer<bool>();
     await _setSurface(tester, const Size(1440, 900));
@@ -368,26 +363,43 @@ final class _Repositories {
   final lesson = _LessonRepository();
   final knowledge = _KnowledgeRepository();
   final publication = _PublicationRepository();
+  final repositoryPicker = _RepositoryPicker();
+  late StudyFeatureFacadeV2 facade;
+}
 
-  StudyFeatureFacadeV1 get facade => facadeWith();
-
-  StudyFeatureFacadeV1 facadeWith({Config config = const Config()}) =>
-      StudyFeatureFacadeV1(
-        config: config,
-        studyRepository: study,
-        lessonContentRepository: lesson,
-        knowledgeRepository: knowledge,
-        publicationRepository: publication,
-        repositoryPicker: const _RepositoryPicker(),
-      );
+Future<_Repositories> _repositoriesForTest() async {
+  final repositories = _Repositories();
+  repositories.facade = await initPackage(
+    config: const Config(autosaveDelay: Duration.zero),
+    resetForTesting: true,
+    dependencies: Dependencies(
+      studyRepository: repositories.study,
+      lessonContentRepository: repositories.lesson,
+      knowledgeRepository: repositories.knowledge,
+      publicationRepository: repositories.publication,
+      errorReporter: const _ErrorReporter(),
+      repositoryPicker: repositories.repositoryPicker,
+    ),
+  );
+  addTearDown(() {
+    unawaited(repositories.facade.catalogController.close());
+    unawaited(repositories.facade.lessonEditorController.close());
+    unawaited(repositories.facade.conceptController.close());
+    unawaited(repositories.facade.publicationController.close());
+  });
+  return repositories;
 }
 
 void _stubCatalog(_StudyRepository repository) {
-  when(() => repository.listStudies(includeArchived: true))
+  when(() => repository.listStudies(scope: ArchiveScopeV1.includeArchived))
       .thenAnswer((_) async => [_study]);
-  when(() => repository.getMaterialTree('study-1', includeArchived: true))
-      .thenAnswer((_) async => _tree());
-  when(() => repository.getDashboard('study-1'))
+  when(
+    () => repository.getMaterialTree(
+      study: _study,
+      scope: ArchiveScopeV1.includeArchived,
+    ),
+  ).thenAnswer((_) async => _tree());
+  when(() => repository.getDashboard(_study))
       .thenAnswer((_) async => _progress());
 }
 
@@ -395,6 +407,23 @@ Future<void> _setSurface(WidgetTester tester, Size size) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
   addTearDown(tester.view.reset);
+}
+
+Future<void> _pumpCatalogState(
+  WidgetTester tester,
+  _Repositories repositories,
+  String state,
+) async {
+  for (var i = 0; i < 50; i++) {
+    await tester.pump(const Duration(milliseconds: 1));
+    if (repositories.facade.catalogController.state.toString().contains(
+      'CatalogLoadStateV2.$state',
+    )) {
+      await tester.pump(const Duration(milliseconds: 1));
+      return;
+    }
+  }
+  fail('Catalog did not reach $state state.');
 }
 
 Widget _testApp(Widget home) => RepaintBoundary(

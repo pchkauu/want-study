@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:study/src/domain/model/study_enum.dart';
+import 'package:study/src/domain/_barrel.dart';
 
 const studyWarningColor = Color(0xFFF2B35F);
 

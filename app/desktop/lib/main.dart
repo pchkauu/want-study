@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:launch_mode/launch_mode.dart';
 import 'package:observatory/observatory.dart' as observatory;
 import 'package:study/study.dart' as study;
-import 'package:want_study_desktop/src/dependency/injection.dart';
-import 'package:want_study_desktop/src/navigation/app_router.dart';
-import 'package:want_study_desktop/src/theme/app_theme.dart';
+import 'package:want_study_desktop/src/dependency/_barrel.dart';
+import 'package:want_study_desktop/src/navigation/_barrel.dart';
+import 'package:want_study_desktop/src/theme/_barrel.dart';
 
 Future<void> main() => observatory.Observatory.run<void>(
   config: const observatory.Config(
@@ -13,13 +13,14 @@ Future<void> main() => observatory.Observatory.run<void>(
     blocEffects: observatory.TalkerBlocEffectsSettings(
       printEffectFullData: false,
     ),
+    redaction: observatory.RedactionPolicy.disabled(),
   ),
   zoneName: 'main',
   body: _start,
 );
 
 Future<void> _start() async {
-  LaunchMode.initialize(LaunchModeType.foreground);
+  LaunchMode.initializeAutomatically();
   configureDependencies();
   observatory.Observatory.attachTo(getIt<Dio>());
   final facade = await study.initPackage(

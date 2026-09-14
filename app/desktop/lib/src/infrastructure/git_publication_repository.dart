@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:domain_error/domain_error.dart';
 import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as path;
 import 'package:study/study.dart';
@@ -42,8 +43,8 @@ final class _CommandResult {
   const _CommandResult(this.exitCode, this.stdout);
 }
 
-@LazySingleton(as: StudyPublicationRepositoryV1)
-final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
+@LazySingleton(as: StudyPublicationRepositoryV2)
+final class GitPublicationRepositoryV2 implements StudyPublicationRepositoryV2 {
   static const _manifestPath = '.want-study/manifest.json';
   static const _cppStudyLegacyHash = <String, String>{
     'README.md':
@@ -55,22 +56,27 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
   };
 
   final GrpcExportGatewayV1 _export;
-  final StudyRepositoryV1 _studyRepository;
+  final StudyRepositoryV2 _studyRepository;
+  final StudyErrorReporterV2 _errorReporter;
 
-  const GitPublicationRepositoryV1(this._export, this._studyRepository);
+  const GitPublicationRepositoryV2(
+    this._export,
+    this._studyRepository,
+    this._errorReporter,
+  );
 
   @override
-  Future<ExportSnapshotV1> renderStudyExport(
-    String studyId, {
-    int? expectedContentRevision,
-  }) =>
-      _export.render(studyId, expectedContentRevision: expectedContentRevision);
+  Future<ExportSnapshotV1> renderStudyExport(StudyV1 study) =>
+      _export.render(study.id, expectedContentRevision: study.contentRevision);
 
   @override
   Future<PublicationPreviewV1> preview({
     required StudyV1 study,
     required ExportSnapshotV1 snapshot,
-  }) => _guard(() => _preview(study, snapshot));
+  }) => _guard(
+    'GitPublicationRepositoryV2.preview():',
+    () => _preview(study, snapshot),
+  );
 
   Future<PublicationPreviewV1> _preview(
     StudyV1 study,
@@ -94,8 +100,11 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
   Future<PublicationV1> publish({
     required StudyV1 study,
     required ExportSnapshotV1 snapshot,
-    required String commitMessage,
-  }) => _guard(() => _publish(study, snapshot, commitMessage));
+    required PublicationCommitV1 commit,
+  }) => _guard(
+    'GitPublicationRepositoryV2.publish():',
+    () => _publish(study, snapshot, commit.message),
+  );
 
   Future<PublicationV1> _publish(
     StudyV1 study,
@@ -107,7 +116,7 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
       throw const PublicationErrorV1('invalid_commit_message');
     }
     final git = await _preflight(study.localRepositoryPath);
-    final tree = await _studyRepository.getMaterialTree(study.id);
+    final tree = await _studyRepository.getMaterialTree(study: study);
     if (tree.study.contentRevision != snapshot.studyRevision) {
       throw ConflictErrorV1('study/${study.id}/content');
     }
@@ -171,6 +180,11 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
       if (error is DomainError) {
         Error.throwWithStackTrace(error, stackTrace);
       }
+      await _reportRaw(
+        'GitPublicationRepositoryV2.writeSnapshot():',
+        error,
+        stackTrace,
+      );
       throw PublicationErrorV1(
         'write_failed',
         cause: error,
@@ -182,11 +196,20 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
   }
 
   @override
-  Future<PublicationV1> retryPush(PublicationV1 publication) =>
-      _guard(() => _retryPush(publication));
+  Future<PublicationV1> retryPush(PublicationV1 publication) => _guard(
+    'GitPublicationRepositoryV2.retryPush():',
+    () => _retryPush(publication),
+  );
 
   Future<PublicationV1> _retryPush(PublicationV1 publication) async {
-    final tree = await _studyRepository.getMaterialTree(publication.studyId);
+    final studies = await _studyRepository.listStudies(
+      scope: ArchiveScopeV1.includeArchived,
+    );
+    final study = studies
+        .where((value) => value.id == publication.studyId)
+        .firstOrNull;
+    if (study == null) throw const NotFoundErrorV1('study');
+    final tree = await _studyRepository.getMaterialTree(study: study);
     final git = await _preflight(tree.study.localRepositoryPath);
     final head = (await _runGit(git.root, ['rev-parse', 'HEAD'])).stdout.trim();
     if (head != publication.commitSha) {
@@ -337,6 +360,11 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
     } on DomainError {
       rethrow;
     } on Object catch (error, stackTrace) {
+      await _reportRaw(
+        'GitPublicationRepositoryV2.readManifest():',
+        error,
+        stackTrace,
+      );
       throw PublicationErrorV1(
         'invalid_manifest',
         cause: error,
@@ -587,6 +615,11 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
       await stderrFuture;
       return _CommandResult(exitCode, stdout);
     } on Object catch (error, stackTrace) {
+      await _reportRaw(
+        'GitPublicationRepositoryV2.runProcess():',
+        error,
+        stackTrace,
+      );
       throw PublicationErrorV1(
         'process_failed',
         cause: error,
@@ -595,17 +628,65 @@ final class GitPublicationRepositoryV1 implements StudyPublicationRepositoryV1 {
     }
   }
 
-  Future<T> _guard<T>(Future<T> Function() call) async {
+  Future<T> _guard<T>(String operation, Future<T> Function() call) async {
+    final context = StudyErrorContextV1(
+      operation: operation,
+      layer: StudyErrorLayerV1.infrastructure,
+    );
+    final result = await captureResult(
+      call,
+      options: CaptureResultOptions(
+        mapToDomainError: (error, stackTrace) => PublicationErrorV1(
+          'unexpected_failure',
+          cause: error,
+          stackTrace: stackTrace,
+        ),
+        onDomainError: (error, stackTrace) => _errorReporter.reportDomainError(
+          context: context,
+          error: error,
+          stackTrace: stackTrace,
+        ),
+        onRawError: (error, stackTrace) => _errorReporter.reportRawError(
+          context: context,
+          error: error,
+          stackTrace: stackTrace,
+        ),
+        onObserverError: (error, stackTrace) =>
+            _errorReporter.reportObserverError(
+              context: context,
+              error: error,
+              stackTrace: stackTrace,
+            ),
+      ),
+    );
+    return result.fold((error) => throw error, (value) => value);
+  }
+
+  Future<void> _reportRaw(
+    String operation,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    final context = StudyErrorContextV1(
+      operation: operation,
+      layer: StudyErrorLayerV1.infrastructure,
+    );
     try {
-      return await call();
-    } on DomainError {
-      rethrow;
-    } on Object catch (error, stackTrace) {
-      throw PublicationErrorV1(
-        'unexpected_failure',
-        cause: error,
+      await _errorReporter.reportRawError(
+        context: context,
+        error: error,
         stackTrace: stackTrace,
       );
+    } on Object catch (observerError, observerStackTrace) {
+      try {
+        await _errorReporter.reportObserverError(
+          context: context,
+          error: observerError,
+          stackTrace: observerStackTrace,
+        );
+      } on Object {
+        // Reporting does not replace operation failure.
+      }
     }
   }
 }

@@ -2,29 +2,20 @@ import 'package:bloc_effects/bloc_effects.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:study/src/application/bloc/lesson_editor_bloc.dart';
-import 'package:study/src/application/safe_call.dart';
-import 'package:study/src/domain/model/code_file.dart';
-import 'package:study/src/domain/model/homework_task.dart';
-import 'package:study/src/domain/model/lesson.dart';
-import 'package:study/src/domain/model/note_block.dart';
-import 'package:study/src/domain/model/study_enum.dart';
-import 'package:study/src/domain/repository/knowledge_repository.dart';
-import 'package:study/src/domain/repository/lesson_content_repository.dart';
-import 'package:study/src/presentation/widget/study_ui.dart';
+import 'package:study/src/application/_barrel.dart';
+import 'package:study/src/domain/_barrel.dart';
+import 'package:study/src/presentation/_barrel.dart';
 import 'package:uuid/uuid.dart';
 
 final class LessonEditorPageV1 extends StatefulWidget {
+  final StudyV1 study;
   final LessonV1 lesson;
-  final LessonContentRepositoryV1 repository;
-  final KnowledgeRepositoryV1 knowledgeRepository;
-  final Duration autosaveDelay;
+  final LessonEditorControllerV2 controller;
 
   const LessonEditorPageV1({
+    required this.study,
     required this.lesson,
-    required this.repository,
-    required this.knowledgeRepository,
-    required this.autosaveDelay,
+    required this.controller,
     super.key,
   });
 
@@ -33,33 +24,25 @@ final class LessonEditorPageV1 extends StatefulWidget {
 }
 
 final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
-  late final LessonEditorBlocV1 _bloc;
+  late final LessonEditorControllerV2 _controller;
 
   @override
   void initState() {
     super.initState();
-    _bloc = LessonEditorBlocV1(
-      repository: widget.repository,
-      autosaveDelay: widget.autosaveDelay,
-    )..add(LessonEditorStartedV1(widget.lesson.id));
-  }
-
-  @override
-  void dispose() {
-    _bloc.close();
-    super.dispose();
+    _controller = widget.controller..add(LessonEditorStartedV2(widget.lesson));
   }
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider.value(
-      value: _bloc,
+      value: _controller,
       child:
           BlocEffectConsumer<
-            LessonEditorBlocV1,
-            LessonEditorStateV1,
-            LessonEditorEffectV1
+            LessonEditorControllerV2,
+            LessonEditorStateV2,
+            LessonEditorEffectV2
           >(
+            bloc: _controller,
             listener: _onEffect,
             builder: (context, state) {
               final unsafeToLeave =
@@ -71,7 +54,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                 canPop: !unsafeToLeave,
                 onPopInvokedWithResult: (didPop, _) {
                   if (!didPop) {
-                    _bloc.add(const LessonEditorNavigationRequestedV1());
+                    _controller.add(const LessonEditorNavigationRequestedV2());
                   }
                 },
                 child: DefaultTabController(
@@ -146,9 +129,9 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     );
   }
 
-  Widget _body(LessonEditorStateV1 state) {
-    if (state.loadState == LessonEditorLoadStateV1.loading ||
-        state.loadState == LessonEditorLoadStateV1.initial) {
+  Widget _body(LessonEditorStateV2 state) {
+    if (state.loadState == LessonEditorLoadStateV2.loading ||
+        state.loadState == LessonEditorLoadStateV2.initial) {
       return const StudySkeleton();
     }
     final workspace = state.workspace;
@@ -159,32 +142,33 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         description: 'Проверьте локальный сервис и повторите попытку.',
         actionLabel: 'Повторить',
         actionIcon: Icons.refresh_rounded,
-        onAction: () => _bloc.add(LessonEditorStartedV1(widget.lesson.id)),
+        onAction: () => _controller.add(LessonEditorStartedV2(widget.lesson)),
       );
     }
     return TabBarView(
       children: [
         _NoteView(
           block: workspace.block,
-          onChanged: (block) => _bloc.add(LessonEditorBlockChangedV1(block)),
+          onChanged: (block) =>
+              _controller.add(LessonEditorBlockChangedV2(block)),
           onAdd: () => _addBlock(context, workspace.block.length),
           onDelete: (block) => _deleteItem(context, block),
           onConcept: (block) => _editBlockConcept(context, block),
           onMove: (block, offset) =>
-              _bloc.add(LessonEditorItemMoveRequestedV1(block, offset)),
+              _controller.add(LessonEditorBlockMoveRequestedV2(block, offset)),
         ),
         _HomeworkView(
           task: workspace.task,
-          onChanged: (task) => _bloc.add(LessonEditorTaskChangedV1(task)),
+          onChanged: (task) => _controller.add(LessonEditorTaskChangedV2(task)),
           onAdd: () => _addTask(context, workspace.task.length),
           onEdit: (task) => _addTask(context, task.position, task),
           onDelete: (task) => _deleteItem(context, task),
           onMove: (task, offset) =>
-              _bloc.add(LessonEditorItemMoveRequestedV1(task, offset)),
+              _controller.add(LessonEditorTaskMoveRequestedV2(task, offset)),
         ),
         _FileView(
           file: workspace.file,
-          onChanged: (file) => _bloc.add(LessonEditorFileChangedV1(file)),
+          onChanged: (file) => _controller.add(LessonEditorFileChangedV2(file)),
           onAdd: () => _addFile(context, workspace.task),
           onDelete: (file) => _deleteItem(context, file),
         ),
@@ -211,7 +195,14 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
       ),
     );
     if (confirmed ?? false) {
-      _bloc.add(LessonEditorItemDeletedV1(item));
+      switch (item) {
+        case final NoteBlockV1 value:
+          _controller.add(LessonEditorBlockDeletedV2(value));
+        case final HomeworkTaskV1 value:
+          _controller.add(LessonEditorTaskDeletedV2(value));
+        case final CodeFileV1 value:
+          _controller.add(LessonEditorFileDeletedV2(value));
+      }
     }
   }
 
@@ -219,111 +210,80 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     BuildContext context,
     NoteBlockV1 block,
   ) async {
-    try {
-      final result = await studySafeCallV1(
-        'knowledge.listForBlock',
-        () => widget.knowledgeRepository.searchConcepts(
-          widget.lesson.studyId,
-          '',
-          limit: 100,
-        ),
-      );
-      final concept = result.fold(
-        (error) => throw error,
-        (value) => value.toList(),
-      );
-      final busyConcept = <String>{};
-      if (!context.mounted) {
-        return;
-      }
-      await showDialog<void>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Понятия блока'),
-            content: SizedBox(
-              width: 480,
-              height: 420,
-              child: concept.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'Сначала добавьте понятие в разделе «Понятия».',
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: concept.length,
-                      itemBuilder: (context, index) {
-                        final item = concept[index];
-                        final linked = item.blockIds.contains(block.id);
-                        return CheckboxListTile(
-                          value: linked,
-                          title: Text(item.title),
-                          onChanged: busyConcept.contains(item.id)
-                              ? null
-                              : (_) async {
-                                  setDialogState(
-                                    () => busyConcept.add(item.id),
-                                  );
-                                  final update = await studySafeCallV1(
-                                    linked
-                                        ? 'knowledge.unlinkBlock'
-                                        : 'knowledge.linkBlock',
-                                    () => linked
-                                        ? widget.knowledgeRepository
-                                              .unlinkBlock(item, block.id)
-                                        : widget.knowledgeRepository.linkBlock(
-                                            item,
-                                            block.id,
-                                          ),
-                                  );
-                                  update.fold(
-                                    (_) => _showFailure(),
-                                    (stored) => concept[index] = stored,
-                                  );
-                                  if (context.mounted) {
-                                    setDialogState(
-                                      () => busyConcept.remove(item.id),
-                                    );
-                                  }
-                                },
-                        );
-                      },
+    final concept = (await _controller.searchConcept(
+      study: widget.study,
+      query: '',
+    )).toList();
+    if (!context.mounted) return;
+    final busyConcept = <String>{};
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Понятия блока'),
+          content: SizedBox(
+            width: 480,
+            height: 420,
+            child: concept.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Сначала добавьте понятие в разделе «Понятия».',
                     ),
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Готово'),
-              ),
-            ],
+                  )
+                : ListView.builder(
+                    itemCount: concept.length,
+                    itemBuilder: (context, index) {
+                      final item = concept[index];
+                      final linked = item.blockIds.contains(block.id);
+                      return CheckboxListTile(
+                        value: linked,
+                        title: Text(item.title),
+                        onChanged: busyConcept.contains(item.id)
+                            ? null
+                            : (_) async {
+                                setDialogState(() => busyConcept.add(item.id));
+                                final stored = await _controller
+                                    .changeBlockConcept(
+                                      concept: item,
+                                      block: block,
+                                      link: !linked,
+                                    );
+                                if (stored != null) {
+                                  concept[index] = stored;
+                                }
+                                if (context.mounted) {
+                                  setDialogState(
+                                    () => busyConcept.remove(item.id),
+                                  );
+                                }
+                              },
+                      );
+                    },
+                  ),
           ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Готово'),
+            ),
+          ],
         ),
-      );
-    } on Object {
-      if (context.mounted) {
-        _showFailure();
-      }
-    }
-  }
-
-  void _showFailure() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Не удалось выполнить операцию')),
+      ),
     );
   }
 
   Future<void> _onEffect(
     BuildContext context,
-    LessonEditorEffectV1 effect,
+    LessonEditorEffectV2 effect,
   ) async {
     switch (effect) {
-      case LessonEditorFailureEffectV1():
+      case LessonEditorFailureEffectV2():
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Не удалось сохранить изменения')),
         );
-      case LessonEditorNavigateEffectV1():
+      case LessonEditorNavigateEffectV2():
         Navigator.of(context).pop();
-      case LessonEditorDraftDecisionEffectV1():
+      case LessonEditorDraftDecisionEffectV2():
         final action = await showDialog<_DraftAction>(
           context: context,
           builder: (context) => AlertDialog(
@@ -347,9 +307,9 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         );
         switch (action) {
           case _DraftAction.retry:
-            _bloc.add(const LessonEditorRetrySaveV1());
+            _controller.add(const LessonEditorRetrySaveV2());
           case _DraftAction.discard:
-            _bloc.add(const LessonEditorDiscardV1());
+            _controller.add(const LessonEditorDiscardV2());
           case _DraftAction.stay:
           case null:
             break;
@@ -386,8 +346,8 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
       ),
     );
     if (result != null) {
-      _bloc.add(
-        LessonEditorBlockAddedV1(
+      _controller.add(
+        LessonEditorBlockAddedV2(
           NoteBlockV1(
             id: const Uuid().v4(),
             studyId: widget.lesson.studyId,
@@ -495,10 +455,10 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     prompt.dispose();
     solution.dispose();
     if (result != null) {
-      _bloc.add(
+      _controller.add(
         existing == null
-            ? LessonEditorTaskAddedV1(result)
-            : LessonEditorTaskChangedV1(result),
+            ? LessonEditorTaskAddedV2(result)
+            : LessonEditorTaskChangedV2(result),
       );
     }
   }
@@ -586,7 +546,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     language.dispose();
     content.dispose();
     if (result != null) {
-      _bloc.add(LessonEditorFileAddedV1(result));
+      _controller.add(LessonEditorFileAddedV2(result));
     }
   }
 }
