@@ -24,6 +24,7 @@ final class PublicationControllerV2
         > {
   final PublicationUseCase _useCase;
   final StudyErrorReporterV2 _reporter;
+  var _previewEpoch = 0;
 
   PublicationControllerV2(this._useCase, this._reporter)
     : super(const PublicationStateV2()) {
@@ -44,6 +45,20 @@ final class PublicationControllerV2
         state.loadState == PublicationLoadStateV2.pushFailed) {
       return;
     }
+    final epoch = ++_previewEpoch;
+    if (event.study.localRepositoryPath.trim().isEmpty) {
+      emit(
+        state.copyWith(
+          loadState: PublicationLoadStateV2.initial,
+          study: () => event.study,
+          snapshot: () => null,
+          preview: () => null,
+          publication: () => null,
+          failure: () => null,
+        ),
+      );
+      return;
+    }
     emit(
       state.copyWith(
         loadState: PublicationLoadStateV2.preparing,
@@ -57,16 +72,24 @@ final class PublicationControllerV2
     final result = await _useCase.prepareV1(
       params: PublicationPrepareParamsV1(event.study),
     );
+    if (!_isCurrentPreview(event.study.id, epoch, emit)) return;
     await result.fold(
-      (error) =>
-          _emitFailure(error, emit, 'PublicationControllerV2.prepare():'),
-      (value) async => emit(
-        state.copyWith(
-          loadState: PublicationLoadStateV2.ready,
-          snapshot: () => value.snapshot,
-          preview: () => value.preview,
-        ),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'PublicationControllerV2.prepare():',
+        isCurrent: () => _isCurrentPreview(event.study.id, epoch, emit),
       ),
+      (value) async {
+        if (!_isCurrentPreview(event.study.id, epoch, emit)) return;
+        emit(
+          state.copyWith(
+            loadState: PublicationLoadStateV2.ready,
+            snapshot: () => value.snapshot,
+            preview: () => value.preview,
+          ),
+        );
+      },
     );
   }
 
@@ -77,7 +100,15 @@ final class PublicationControllerV2
     if (state.loadState != PublicationLoadStateV2.ready) return;
     final study = state.study;
     final snapshot = state.snapshot;
-    if (study == null || snapshot == null) return;
+    final preview = state.preview;
+    if (study == null ||
+        snapshot == null ||
+        preview == null ||
+        snapshot.studyId != study.id ||
+        preview.studyId != study.id) {
+      return;
+    }
+    final studyId = study.id;
     emit(state.copyWith(loadState: PublicationLoadStateV2.publishing));
     final result = await _useCase.publishV1(
       params: PublicationPublishParamsV1(
@@ -86,10 +117,19 @@ final class PublicationControllerV2
         commit: event.commit,
       ),
     );
+    if (emit.isDone || state.study?.id != studyId) return;
     await result.fold(
-      (error) =>
-          _emitFailure(error, emit, 'PublicationControllerV2.publish():'),
-      (value) async => _emitPublication(value.publication, emit),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'PublicationControllerV2.publish():',
+        isCurrent: () => !emit.isDone && state.study?.id == studyId,
+      ),
+      (value) async {
+        if (!emit.isDone && state.study?.id == studyId) {
+          _emitPublication(value.publication, emit);
+        }
+      },
     );
   }
 
@@ -100,18 +140,25 @@ final class PublicationControllerV2
     if (state.loadState != PublicationLoadStateV2.pushFailed) return;
     final publication = state.publication;
     if (publication == null) return;
+    final studyId = publication.studyId;
     emit(state.copyWith(loadState: PublicationLoadStateV2.publishing));
     final result = await _useCase.retryPushV1(
       params: PublicationRetryPushParamsV1(publication),
     );
+    if (emit.isDone || state.study?.id != studyId) return;
     await result.fold(
       (error) => _emitFailure(
         error,
         emit,
         'PublicationControllerV2.retryPush():',
         loadState: PublicationLoadStateV2.pushFailed,
+        isCurrent: () => !emit.isDone && state.study?.id == studyId,
       ),
-      (value) async => _emitPublication(value.publication, emit),
+      (value) async {
+        if (!emit.isDone && state.study?.id == studyId) {
+          _emitPublication(value.publication, emit);
+        }
+      },
     );
   }
 
@@ -139,7 +186,9 @@ final class PublicationControllerV2
     Emitter<PublicationStateV2> emit,
     String operation, {
     PublicationLoadStateV2 loadState = PublicationLoadStateV2.failed,
+    bool Function()? isCurrent,
   }) async {
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     await _reporter.reportDomainError(
       context: StudyErrorContextV1(
         operation: operation,
@@ -148,6 +197,7 @@ final class PublicationControllerV2
       error: error,
       stackTrace: error.stackTrace ?? StackTrace.current,
     );
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     final failure = studyFailureKindV1(error);
     final invalidatePreview = failure == StudyFailureKindV1.conflict;
     emit(
@@ -160,6 +210,12 @@ final class PublicationControllerV2
     );
     emitEffect(PublicationFailureEffectV2(failure));
   }
+
+  bool _isCurrentPreview(
+    String studyId,
+    int epoch,
+    Emitter<PublicationStateV2> emit,
+  ) => !emit.isDone && _previewEpoch == epoch && state.study?.id == studyId;
 
   static void _requireForeground() {
     if (!LaunchMode.isForeground) {

@@ -47,6 +47,8 @@ final class PublicationStateV2 extends Equatable {
   List<Object?> get props => [
     loadState,
     study?.id,
+    study?.version,
+    study?.contentRevision,
     snapshot,
     preview,
     publication,

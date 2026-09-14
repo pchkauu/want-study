@@ -136,24 +136,34 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     final selectedStudy = state.selectedStudy;
     return Column(
       children: [
-        _StudyHeader(
-          selectedPage: _selectedPage,
-          study: state.study,
-          selectedStudyId: state.selectedStudyId,
-          onSelected: (id) => _catalogController.add(
-            CatalogStudySelectedV2(
-              state.study.firstWhere((study) => study.id == id),
-            ),
-          ),
-          onCreate: () => _createStudy(context),
-          onEdit: selectedStudy == null
-              ? null
-              : () => _createStudy(context, selectedStudy),
-          onArchive: selectedStudy == null
-              ? null
-              : () => _catalogController.add(
-                  CatalogStudyArchiveChangedV2(selectedStudy),
+        BlocBuilder<PublicationControllerV2, PublicationStateV2>(
+          bloc: widget.publicationController,
+          builder: (context, publicationState) {
+            final studyLocked = {
+              PublicationLoadStateV2.publishing,
+              PublicationLoadStateV2.pushFailed,
+            }.contains(publicationState.loadState);
+            return _StudyHeader(
+              selectedPage: _selectedPage,
+              study: state.study,
+              selectedStudyId: state.selectedStudyId,
+              studyLocked: studyLocked,
+              onSelected: (id) => _catalogController.add(
+                CatalogStudySelectedV2(
+                  state.study.firstWhere((study) => study.id == id),
                 ),
+              ),
+              onCreate: () => _createStudy(context),
+              onEdit: selectedStudy == null || studyLocked
+                  ? null
+                  : () => _createStudy(context, selectedStudy),
+              onArchive: selectedStudy == null || studyLocked
+                  ? null
+                  : () => _catalogController.add(
+                      CatalogStudyArchiveChangedV2(selectedStudy),
+                    ),
+            );
+          },
         ),
         const Divider(height: 1),
         Expanded(
@@ -206,6 +216,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                   : PublicationPageV1(
                       study: selectedStudy,
                       controller: widget.publicationController,
+                      onConfigureRepository: () =>
+                          _createStudy(context, selectedStudy),
                     ),
           },
         ),
@@ -806,6 +818,7 @@ final class _StudyHeader extends StatelessWidget {
   final int selectedPage;
   final List<StudyV1> study;
   final String? selectedStudyId;
+  final bool studyLocked;
   final ValueChanged<String> onSelected;
   final VoidCallback onCreate;
   final VoidCallback? onEdit;
@@ -815,6 +828,7 @@ final class _StudyHeader extends StatelessWidget {
     required this.selectedPage,
     required this.study,
     required this.selectedStudyId,
+    required this.studyLocked,
     required this.onSelected,
     required this.onCreate,
     required this.onEdit,
@@ -865,6 +879,7 @@ final class _StudyHeader extends StatelessWidget {
                 child: _StudySelector(
                   study: study,
                   selected: selected,
+                  enabled: !studyLocked,
                   onSelected: onSelected,
                 ),
               ),
@@ -938,11 +953,13 @@ final class _StudyHeader extends StatelessWidget {
 final class _StudySelector extends StatelessWidget {
   final List<StudyV1> study;
   final StudyV1? selected;
+  final bool enabled;
   final ValueChanged<String> onSelected;
 
   const _StudySelector({
     required this.study,
     required this.selected,
+    required this.enabled,
     required this.onSelected,
   });
 
@@ -968,7 +985,7 @@ final class _StudySelector extends StatelessWidget {
       menuChildren: [
         for (var index = 0; index < study.length; index++)
           MenuItemButton(
-            onPressed: () => onSelected(study[index].id),
+            onPressed: enabled ? () => onSelected(study[index].id) : null,
             child: SizedBox(
               key: index == 0 ? const ValueKey('study-selector-menu') : null,
               width: 400,
@@ -1019,7 +1036,9 @@ final class _StudySelector extends StatelessWidget {
           ),
       ],
       builder: (context, controller, _) => Tooltip(
-        message: 'Выбрать обучение',
+        message: enabled
+            ? 'Выбрать обучение'
+            : 'Завершите публикацию перед сменой обучения',
         child: Semantics(
           button: true,
           label: 'Выбрать обучение',
@@ -1032,7 +1051,11 @@ final class _StudySelector extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               key: const ValueKey('study-selector'),
-              onTap: controller.isOpen ? controller.close : controller.open,
+              onTap: enabled
+                  ? controller.isOpen
+                        ? controller.close
+                        : controller.open
+                  : null,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,

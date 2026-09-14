@@ -509,7 +509,9 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     await tester.enterText(noteEditor, '/');
+    await tester.enterText(noteEditor, '/');
     await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
     expect(find.text('Тип блока'), findsOneWidget);
     expect(find.text('Markdown'), findsOneWidget);
     final commandSearch = find.byWidgetPredicate(
@@ -750,7 +752,7 @@ void main() {
     );
     expect(find.text('Ошибка сохранения'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+    await tester.tap(find.byKey(const ValueKey('save-recovery')));
     await tester.pumpAndSettle();
     expect(find.text('Ошибка сохранения'), findsNothing);
     expect(find.text('Изменён'), findsNothing);
@@ -926,6 +928,70 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('disconnected concepts render without exceptions', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    final graph = ConceptGraphV1(concept: _conceptGraph().concept);
+    when(
+      () => repositories.knowledge.getGraph(
+        study: _study,
+        selectedConcept: any(named: 'selectedConcept'),
+      ),
+    ).thenAnswer((_) async => graph);
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.hub_outlined));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Связей: 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('concept graph renders 300 connected nodes', (tester) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    final graph = ConceptGraphV1(
+      concept: [
+        for (var index = 0; index < 300; index++)
+          ConceptV1(
+            id: 'concept-$index',
+            studyId: _study.id,
+            title: 'Понятие $index',
+            exportSlug: 'concept-$index',
+          ),
+      ],
+      relation: [
+        for (var index = 0; index < 299; index++)
+          ConceptRelationV1(
+            id: 'relation-$index',
+            studyId: _study.id,
+            sourceConceptId: 'concept-$index',
+            targetConceptId: 'concept-${index + 1}',
+            type: ConceptRelationTypeV1.appliesTo,
+          ),
+      ],
+    );
+    when(
+      () => repositories.knowledge.getGraph(
+        study: _study,
+        selectedConcept: any(named: 'selectedConcept'),
+      ),
+    ).thenAnswer((_) async => graph);
+    await _setSurface(tester, const Size(1440, 900));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.hub_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Связей: 299'), findsOneWidget);
+    expect(find.text('Понятий: 300'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('concept graph survives topology changes and page switches', (
     tester,
   ) async {
@@ -965,6 +1031,85 @@ void main() {
       expect(find.text('RAII'), findsWidgets);
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('homework retry preserves edits made while saving', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    var workspace = _workspace();
+    final firstSave = Completer<HomeworkTaskV1>();
+    final savedPrompt = <String>[];
+    var calls = 0;
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async => workspace);
+    when(() => repositories.lesson.updateTask(any())).thenAnswer((call) {
+      final task = call.positionalArguments.single as HomeworkTaskV1;
+      savedPrompt.add(task.promptMarkdown);
+      calls++;
+      if (calls == 1) return firstSave.future;
+      final stored = task.copyWith(version: task.version + 1);
+      workspace = workspace.copyWith(task: [stored]);
+      return Future.value(stored);
+    });
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Домашняя работа').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Задание 1'));
+    await tester.pumpAndSettle();
+
+    final prompt = _textFieldWithLabel('Условие');
+    await tester.enterText(prompt, 'Первая версия');
+    final saveButton = find.widgetWithText(FilledButton, 'Сохранить');
+    await tester.ensureVisible(saveButton);
+    await tester.tap(saveButton);
+    await tester.pump();
+    final promptField = tester.widget<TextField>(prompt);
+    promptField.controller!.text = 'Новая версия во время сохранения';
+    promptField.onChanged?.call(promptField.controller!.text);
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(prompt).controller?.text,
+      'Новая версия во время сохранения',
+    );
+    firstSave.completeError(const UnavailableErrorV1());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Не удалось сохранить задание. Черновик сохранён.'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(prompt).controller?.text,
+      'Новая версия во время сохранения',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Повторить'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('homework-inline-editor')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(prompt).controller?.text,
+      'Новая версия во время сохранения',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+    await tester.pumpAndSettle();
+    expect(savedPrompt, [
+      'Первая версия',
+      'Первая версия',
+      'Новая версия во время сохранения',
+    ]);
+    expect(find.byKey(const ValueKey('homework-inline-editor')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('late editor failure after disposal has no UI side effect', (
@@ -1062,11 +1207,23 @@ void main() {
     await tester.tap(find.text('Опубликовать'));
     await tester.pump();
     expect(find.byIcon(Icons.cloud_upload_outlined), findsOneWidget);
+    expect(
+      tester
+          .widget<InkWell>(find.byKey(const ValueKey('study-selector')))
+          .onTap,
+      isNull,
+    );
     publishResult.complete(_pushFailedPublication());
     await tester.pumpAndSettle();
     expect(find.text('Push не выполнен'), findsOneWidget);
     expect(find.text('Построить предпросмотр'), findsNothing);
     expect(find.text('Записать и отправить'), findsNothing);
+    expect(
+      tester
+          .widget<InkWell>(find.byKey(const ValueKey('study-selector')))
+          .onTap,
+      isNull,
+    );
 
     await tester.tap(find.text('Повторить push'));
     await tester.pump();
@@ -1081,6 +1238,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Опубликовано'), findsOneWidget);
     expect(find.text('Записать и отправить'), findsNothing);
+    expect(
+      tester
+          .widget<InkWell>(find.byKey(const ValueKey('study-selector')))
+          .onTap,
+      isNotNull,
+    );
 
     await tester.tap(find.text('Построить предпросмотр'));
     await tester.pumpAndSettle();
@@ -1093,6 +1256,39 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('publication requests repository before preflight', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    final study = _study.copyWith(localRepositoryPath: '');
+    when(
+      () =>
+          repositories.study.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) async => [study]);
+    when(
+      () => repositories.study.getMaterialTree(
+        study: study,
+        scope: ArchiveScopeV1.includeArchived,
+      ),
+    ).thenAnswer((_) async => _tree());
+    when(() => repositories.study.getDashboard(study))
+        .thenAnswer((_) async => _progress());
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.publish_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Git-репозиторий не выбран'), findsOneWidget);
+    expect(find.text('Настроить обучение'), findsOneWidget);
+    verifyNever(() => repositories.publication.renderStudyExport(study));
+
+    await tester.tap(find.text('Настроить обучение'));
+    await tester.pumpAndSettle();
+    expect(find.text('Обучение'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('unavailable API has dark diagnostic state', (tester) async {
@@ -1237,6 +1433,7 @@ final _study = StudyV1(
   id: 'study-1',
   title: 'C/C++',
   goal: 'Уверенно проектировать и разбирать современные программы на C++.',
+  localRepositoryPath: '/tmp/study',
   contentRevision: 7,
 );
 

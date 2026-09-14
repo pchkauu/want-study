@@ -41,6 +41,12 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   void didUpdateWidget(ConceptPageV1 oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.study.id != widget.study.id) {
+      _search.clear();
+      _renderGraphTopology = null;
+      _graphPresentation = null;
+      _renderGraph = null;
+      _conceptById = {};
+      _renderedGraphContent = null;
       widget.controller.add(ConceptStartedV1(widget.study));
     }
   }
@@ -83,6 +89,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   }
 
   Widget _build(BuildContext context, ConceptStateV1 state) {
+    final currentStudy = state.study?.id == widget.study.id;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -120,7 +127,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
               ),
             ],
           ),
-          if (state.searchResult.isNotEmpty) ...[
+          if (currentStudy && state.searchResult.isNotEmpty) ...[
             const SizedBox(height: 12),
             SizedBox(
               height: 52,
@@ -152,6 +159,9 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   }
 
   Widget _body(ConceptStateV1 state) {
+    if (state.study?.id != widget.study.id) {
+      return const StudySkeleton(compact: true);
+    }
     if (state.loadState == ConceptLoadStateV1.loading ||
         state.loadState == ConceptLoadStateV1.initial) {
       return const StudySkeleton(compact: true);
@@ -166,6 +176,10 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
         actionIcon: Icons.refresh_rounded,
         onAction: () => widget.controller.add(ConceptStartedV1(widget.study)),
       );
+    }
+    if (graph.concept.any((concept) => concept.studyId != widget.study.id) ||
+        graph.relation.any((relation) => relation.studyId != widget.study.id)) {
+      return const StudySkeleton(compact: true);
     }
     if (graph.concept.isEmpty) {
       return StudyStateView(
@@ -315,11 +329,29 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             )
             .toList()
           ..sort();
-    final presentation = [selectedConceptId, ...conceptPresentation].join('|');
+    final presentation = [
+      topology,
+      selectedConceptId,
+      ...conceptPresentation,
+    ].join('|');
     // Reusing the same widget avoids losing graph children during unrelated
     // parent rebuilds. Visible node changes still recreate the graph safely.
     if (_renderedGraphContent == null || _graphPresentation != presentation) {
       _graphPresentation = presentation;
+      final algorithm = view.$1.edges.isEmpty
+          ? CircleLayoutAlgorithm(
+              CircleLayoutConfiguration(reduceEdgeCrossing: false),
+              null,
+            )
+          : FruchtermanReingoldAlgorithm(
+              FruchtermanReingoldConfiguration(
+                iterations: value.concept.length > 100 ? 40 : 250,
+                repulsionRate: 0.3,
+                attractionRate: 0.04,
+                repulsionPercentage: 0.5,
+                shuffleNodes: false,
+              ),
+            );
       _renderedGraphContent = InteractiveViewer(
         constrained: false,
         boundaryMargin: const EdgeInsets.all(120),
@@ -327,30 +359,25 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
         maxScale: 3,
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: GraphView(
-            key: ValueKey(presentation),
-            graph: view.$1,
-            algorithm: FruchtermanReingoldAlgorithm(
-              FruchtermanReingoldConfiguration(
-                iterations: 250,
-                repulsionRate: 0.3,
-                attractionRate: 0.04,
-                repulsionPercentage: 0.5,
-                shuffleNodes: false,
-              ),
+          child: Semantics(
+            label: 'Связей: ${view.$1.edges.length}',
+            child: GraphView(
+              key: ValueKey(presentation),
+              graph: view.$1,
+              algorithm: algorithm,
+              animated: false,
+              paint: Paint()
+                ..color = Theme.of(context).colorScheme.onSurfaceVariant
+                    .withValues(alpha: 0.55)
+                ..strokeWidth = 1.5,
+              builder: (node) {
+                final id = node.key?.value as String;
+                return _conceptChip(
+                  concept: view.$2[id]!,
+                  selectedConceptId: selectedConceptId,
+                );
+              },
             ),
-            animated: false,
-            paint: Paint()
-              ..color = Theme.of(context).colorScheme.onSurfaceVariant
-                  .withValues(alpha: 0.55)
-              ..strokeWidth = 1.5,
-            builder: (node) {
-              final id = node.key?.value as String;
-              return _conceptChip(
-                concept: view.$2[id]!,
-                selectedConceptId: selectedConceptId,
-              );
-            },
           ),
         ),
       );

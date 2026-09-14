@@ -49,7 +49,8 @@ final class _FileViewState extends State<_FileView>
       _submitted.clear();
     }
     for (final file in widget.file) {
-      if (_submitted.contains(file.id) && _draft[file.id] == file.content) {
+      if ((_submitted.contains(file.id) || _failed.contains(file.id)) &&
+          _draft[file.id] == file.content) {
         _submitted.remove(file.id);
         _draft.remove(file.id);
         _failed.remove(file.id);

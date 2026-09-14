@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:domain_error/domain_error.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:launch_mode/launch_mode.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:study/src/application/_barrel.dart';
+import 'package:study/src/presentation/_barrel.dart';
 import 'package:study/study.dart';
 
 final class _StudyRepository extends Mock implements StudyRepositoryV2 {}
@@ -571,6 +573,62 @@ void main() {
     expect(controller.state.loadState, CatalogLoadStateV2.ready);
   });
 
+  test('catalog ignores late load and skips active study reload', () async {
+    final studyRepository = _StudyRepository();
+    final picker = _RepositoryPicker();
+    final studyA = _study();
+    final studyB = StudyV1(id: 'study-b', title: 'Study B');
+    final lateA = Completer<MaterialTreeV1>();
+    var studyALoads = 0;
+    when(
+      () => studyRepository.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) async => [studyA, studyB]);
+    when(
+      () => studyRepository.getMaterialTree(
+        study: any(named: 'study'),
+        scope: ArchiveScopeV1.includeArchived,
+      ),
+    ).thenAnswer((call) {
+      final study = call.namedArguments[#study] as StudyV1;
+      if (study.id == studyA.id && studyALoads++ > 0) return lateA.future;
+      return Future.value(MaterialTreeV1(study: study));
+    });
+    when(() => studyRepository.getDashboard(any()))
+        .thenAnswer((_) async => _progress());
+    final controller = CatalogControllerV2(
+      CatalogUseCase(studyRepository, picker, executor),
+      reporter,
+    );
+    addTearDown(controller.close);
+
+    await controller.init();
+    clearInteractions(studyRepository);
+    controller.add(CatalogStudySelectedV2(studyA));
+    await Future<void>.delayed(Duration.zero);
+    verifyNever(
+      () => studyRepository.listStudies(scope: ArchiveScopeV1.includeArchived),
+    );
+
+    controller.reload();
+    await untilCalled(
+      () => studyRepository.getMaterialTree(
+        study: studyA,
+        scope: ArchiveScopeV1.includeArchived,
+      ),
+    );
+    controller.add(CatalogStudySelectedV2(studyB));
+    await controller.stream.firstWhere(
+      (state) =>
+          state.loadState == CatalogLoadStateV2.ready &&
+          state.selectedStudyId == studyB.id,
+    );
+    lateA.complete(MaterialTreeV1(study: studyA));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state.selectedStudyId, studyB.id);
+    expect(controller.state.tree?.study.id, studyB.id);
+  });
+
   test('catalog rebases update queued after reorder', () async {
     final studyRepository = _StudyRepository();
     final picker = _RepositoryPicker();
@@ -622,6 +680,59 @@ void main() {
 
     expect(updated?.version, 2);
     expect(updated?.position, 1);
+  });
+
+  test('catalog mutation cannot restore previously selected study', () async {
+    final studyRepository = _StudyRepository();
+    final picker = _RepositoryPicker();
+    final studyA = _study();
+    final studyB = StudyV1(id: 'study-b', title: 'Study B');
+    final source = _source();
+    final update = Completer<LearningSourceV1>();
+    when(
+      () => studyRepository.listStudies(scope: ArchiveScopeV1.includeArchived),
+    ).thenAnswer((_) async => [studyA, studyB]);
+    when(
+      () => studyRepository.getMaterialTree(
+        study: any(named: 'study'),
+        scope: ArchiveScopeV1.includeArchived,
+      ),
+    ).thenAnswer((call) async {
+      final study = call.namedArguments[#study] as StudyV1;
+      return MaterialTreeV1(
+        study: study,
+        source: study.id == studyA.id
+            ? [LearningSourceNodeV1(source: source)]
+            : const [],
+      );
+    });
+    when(() => studyRepository.getDashboard(any()))
+        .thenAnswer((_) async => _progress());
+    when(() => studyRepository.updateSource(any()))
+        .thenAnswer((_) => update.future);
+    final controller = CatalogControllerV2(
+      CatalogUseCase(studyRepository, picker, executor),
+      reporter,
+    );
+    addTearDown(controller.close);
+
+    await controller.init();
+    controller.add(
+      CatalogSourceUpdatedV2(source.copyWith(title: 'Updated source')),
+    );
+    await untilCalled(() => studyRepository.updateSource(any()));
+    controller.add(CatalogStudySelectedV2(studyB));
+    await controller.stream.firstWhere(
+      (state) =>
+          state.loadState == CatalogLoadStateV2.ready &&
+          state.selectedStudyId == studyB.id,
+    );
+    update.complete(source.copyWith(title: 'Updated source', version: 2));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state.selectedStudyId, studyB.id);
+    expect(controller.state.tree?.study.id, studyB.id);
   });
 
   test('concept mutations share one queue and use current version', () async {
@@ -678,6 +789,176 @@ void main() {
 
     expect(archived?.version, 2);
   });
+
+  test(
+    'concept controller ignores late study result and clears search',
+    () async {
+      final studyA = _study();
+      final studyB = StudyV1(id: 'study-b', title: 'Study B');
+      final lateA = Completer<ConceptGraphV1>();
+      final conceptA = _concept();
+      final conceptB = ConceptV1(
+        id: 'concept-b',
+        studyId: studyB.id,
+        title: 'Concept B',
+        exportSlug: 'concept-b',
+      );
+      when(
+        () => knowledgeRepository.getGraph(
+          study: studyA,
+          selectedConcept: any(named: 'selectedConcept'),
+        ),
+      ).thenAnswer((_) => lateA.future);
+      when(
+        () => knowledgeRepository.getGraph(
+          study: studyB,
+          selectedConcept: any(named: 'selectedConcept'),
+        ),
+      ).thenAnswer((_) async => ConceptGraphV1(concept: [conceptB]));
+      when(
+        () => knowledgeRepository.searchConcepts(
+          study: studyA,
+          search: any(named: 'search'),
+        ),
+      ).thenAnswer((_) async => [conceptA]);
+      final controller = ConceptControllerV1(
+        ConceptUseCase(knowledgeRepository, executor),
+        reporter,
+      );
+      addTearDown(controller.close);
+
+      controller.add(ConceptStartedV1(studyA));
+      await untilCalled(
+        () => knowledgeRepository.getGraph(
+          study: studyA,
+          selectedConcept: any(named: 'selectedConcept'),
+        ),
+      );
+      controller.add(ConceptStartedV1(studyB));
+      await controller.stream.firstWhere(
+        (state) =>
+            state.loadState == ConceptLoadStateV1.ready &&
+            state.study?.id == studyB.id,
+      );
+      lateA.complete(ConceptGraphV1(concept: [conceptA]));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state.study?.id, studyB.id);
+      expect(controller.state.graph?.concept.single.id, conceptB.id);
+      expect(controller.state.search.query, isEmpty);
+      expect(controller.state.searchResult, isEmpty);
+    },
+  );
+
+  testWidgets('concept graph rebuilds when only relations change', (
+    tester,
+  ) async {
+    final second = _concept(id: 'concept-2', title: 'Second');
+    final relation = ConceptRelationV1(
+      id: 'relation-id',
+      studyId: _study().id,
+      sourceConceptId: _concept().id,
+      targetConceptId: second.id,
+      type: ConceptRelationTypeV1.relatedTo,
+    );
+    var graph = ConceptGraphV1(concept: [_concept(), second]);
+    when(
+      () => knowledgeRepository.getGraph(
+        study: _study(),
+        selectedConcept: any(named: 'selectedConcept'),
+      ),
+    ).thenAnswer((_) async => graph);
+    final controller = ConceptControllerV1(
+      ConceptUseCase(knowledgeRepository, executor),
+      reporter,
+    );
+    addTearDown(controller.close);
+    tester.view.physicalSize = const Size(1024, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: ConceptPageV1(study: _study(), controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Связей: 0'), findsOneWidget);
+
+    graph = ConceptGraphV1(concept: graph.concept, relation: [relation]);
+    controller.add(ConceptStartedV1(_study()));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Связей: 1'), findsOneWidget);
+
+    graph = ConceptGraphV1(concept: graph.concept);
+    controller.add(ConceptStartedV1(_study()));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Связей: 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
+    'publication skips preflight without repository and isolates studies',
+    () async {
+      final publicationRepository = _PublicationRepository();
+      final studyA = _study();
+      final studyB = StudyV1(
+        id: 'study-b',
+        title: 'Study B',
+        localRepositoryPath: '/tmp/study-b',
+      );
+      final withoutRepository = StudyV1(id: 'study-empty', title: 'Empty');
+      final lateA = Completer<ExportSnapshotV1>();
+      final snapshotB = ExportSnapshotV1(
+        studyId: studyB.id,
+        studyRevision: 1,
+        file: const [],
+      );
+      when(() => publicationRepository.renderStudyExport(studyA))
+          .thenAnswer((_) => lateA.future);
+      when(() => publicationRepository.renderStudyExport(studyB))
+          .thenAnswer((_) async => snapshotB);
+      when(
+        () => publicationRepository.preview(study: studyB, snapshot: snapshotB),
+      ).thenAnswer(
+        (_) async => PublicationPreviewV1(
+          studyId: studyB.id,
+          studyRevision: 1,
+          diff: 'study-b',
+          changedPath: const [],
+        ),
+      );
+      final controller = PublicationControllerV2(
+        PublicationUseCase(publicationRepository, executor),
+        reporter,
+      );
+      addTearDown(controller.close);
+
+      controller.add(PublicationPreviewRequestedV2(withoutRepository));
+      await controller.stream.firstWhere(
+        (state) => state.study?.id == withoutRepository.id,
+      );
+      verifyNever(
+        () => publicationRepository.renderStudyExport(withoutRepository),
+      );
+
+      controller.add(PublicationPreviewRequestedV2(studyA));
+      await untilCalled(() => publicationRepository.renderStudyExport(studyA));
+      controller.add(PublicationPreviewRequestedV2(studyB));
+      await controller.stream.firstWhere(
+        (state) =>
+            state.loadState == PublicationLoadStateV2.ready &&
+            state.study?.id == studyB.id,
+      );
+      lateA.complete(
+        ExportSnapshotV1(studyId: studyA.id, studyRevision: 1, file: const []),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state.study?.id, studyB.id);
+      expect(controller.state.preview?.diff, 'study-b');
+    },
+  );
 
   test('repository picker cancellation stays a normal result', () async {
     final studyRepository = _StudyRepository();
@@ -764,7 +1045,8 @@ CodeFileV1 _file() => CodeFileV1(
   relativePath: 'main.c',
 );
 
-StudyV1 _study() => StudyV1(id: 'study-id', title: 'Study');
+StudyV1 _study() =>
+    StudyV1(id: 'study-id', title: 'Study', localRepositoryPath: '/tmp/study');
 
 LearningSourceV1 _source({String id = 'source-id', int position = 0}) =>
     LearningSourceV1(

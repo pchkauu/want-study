@@ -57,6 +57,17 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
   }
 
   @override
+  void didUpdateWidget(LessonEditorPageV1 oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lesson.id == widget.lesson.id) return;
+    _viewMode = _LessonViewMode.edit;
+    _homeworkDirty = false;
+    _fileDirty = false;
+    _tabController.index = 0;
+    _controller.add(LessonEditorStartedV2(widget.lesson));
+  }
+
+  @override
   void activate() {
     super.activate();
     _isActive = true;
@@ -87,14 +98,19 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
             bloc: _controller,
             listener: _onEffect,
             builder: (context, state) {
+              final currentWorkspace =
+                  state.workspace?.lesson.id == widget.lesson.id &&
+                  state.workspace?.lesson.studyId == widget.study.id;
               final unsafeToLeave =
-                  _hasLocalDraft || _isControllerDraftUnsafe(state.saveState);
-              final effectiveSaveState =
-                  _hasLocalDraft &&
-                      {
-                        SaveStateV1.clean,
-                        SaveStateV1.saved,
-                      }.contains(state.saveState)
+                  currentWorkspace &&
+                  (_hasLocalDraft || _isControllerDraftUnsafe(state.saveState));
+              final effectiveSaveState = !currentWorkspace
+                  ? SaveStateV1.clean
+                  : _hasLocalDraft &&
+                        {
+                          SaveStateV1.clean,
+                          SaveStateV1.saved,
+                        }.contains(state.saveState)
                   ? SaveStateV1.dirty
                   : state.saveState;
               return BlocBuilder<CatalogControllerV2, CatalogStateV2>(
@@ -128,7 +144,11 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 960;
-    final workspace = state.workspace;
+    final workspace =
+        state.workspace?.lesson.id == widget.lesson.id &&
+            state.workspace?.lesson.studyId == widget.study.id
+        ? state.workspace
+        : null;
     return AppBar(
       toolbarHeight: 86,
       leadingWidth: 112,
@@ -213,7 +233,17 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
                 : () => _openExternalUrl(lesson.url),
             icon: const Icon(Icons.open_in_new_rounded),
           ),
-        _SaveBadge(state: saveState, compact: compact),
+        _SaveBadge(
+          state: saveState,
+          compact: compact,
+          onPressed: switch (saveState) {
+            SaveStateV1.failed => () => _controller.add(
+              const LessonEditorRetrySaveV2(),
+            ),
+            SaveStateV1.conflict => _confirmConflictReload,
+            _ => null,
+          },
+        ),
         const SizedBox(width: 16),
       ],
       bottom: PreferredSize(
@@ -274,11 +304,16 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
   }
 
   Widget _body(LessonEditorStateV2 state) {
+    final workspace = state.workspace;
+    if (workspace != null &&
+        (workspace.lesson.id != widget.lesson.id ||
+            workspace.lesson.studyId != widget.study.id)) {
+      return const StudySkeleton();
+    }
     if (state.loadState == LessonEditorLoadStateV2.loading ||
         state.loadState == LessonEditorLoadStateV2.initial) {
       return const StudySkeleton();
     }
-    final workspace = state.workspace;
     if (workspace == null) {
       return StudyStateView(
         icon: Icons.cloud_off_outlined,
@@ -336,9 +371,11 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
               createRequest: _homeworkCreateRequest,
               task: workspace.task,
               busy: busy,
+              saveState: state.saveState,
               onChanged: (task) =>
                   _controller.add(LessonEditorTaskChangedV2(task)),
               onAdded: (task) => _controller.add(LessonEditorTaskAddedV2(task)),
+              onRetry: () => _controller.add(const LessonEditorRetrySaveV2()),
               onDelete: _deleteItem,
               onMove: (task, offset) => _controller.add(
                 LessonEditorTaskMoveRequestedV2(task, offset),
@@ -700,10 +737,11 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
             onPressed: () => Navigator.pop(context, _LeaveAction.discard),
             child: const Text('Сбросить и перечитать'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, _LeaveAction.save),
-            child: const Text('Сохранить'),
-          ),
+          if (state.saveState != SaveStateV1.conflict)
+            FilledButton(
+              onPressed: () => Navigator.pop(context, _LeaveAction.save),
+              child: const Text('Сохранить'),
+            ),
         ],
       ),
     );
@@ -716,7 +754,12 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
         _controller.add(const LessonEditorRetrySaveV2());
         if (await _waitForSuccessfulSave() && mounted && _isActive) {
           await WidgetsBinding.instance.endOfFrame;
-          if (!mounted || !_isActive) return;
+          if (!mounted ||
+              !_isActive ||
+              _hasLocalDraft ||
+              _isControllerDraftUnsafe(_controller.state.saveState)) {
+            return;
+          }
           await Navigator.maybePop(context);
         }
       case _LeaveAction.discard:
@@ -741,6 +784,33 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1>
       }.contains(state.saveState),
     );
     return {SaveStateV1.clean, SaveStateV1.saved}.contains(state.saveState);
+  }
+
+  Future<void> _confirmConflictReload() async {
+    if (!mounted || !_isActive) return;
+    final reload = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Перечитать данные?'),
+        content: const Text(
+          'Версия данных изменилась. Локальные черновики будут сброшены.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Остаться'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Сбросить и перечитать'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !_isActive || !(reload ?? false)) return;
+    _homeworkKey.currentState?.discardDraft();
+    _fileKey.currentState?.discardDraft();
+    _controller.add(const LessonEditorDiscardV2());
   }
 
   Future<void> _onEffect(BuildContext _, LessonEditorEffectV2 effect) async {
@@ -818,8 +888,13 @@ final class _LessonTab extends StatelessWidget {
 final class _SaveBadge extends StatelessWidget {
   final SaveStateV1 state;
   final bool compact;
+  final VoidCallback? onPressed;
 
-  const _SaveBadge({required this.state, required this.compact});
+  const _SaveBadge({
+    required this.state,
+    required this.compact,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -865,7 +940,21 @@ final class _SaveBadge extends StatelessWidget {
         ],
       ),
     );
-    return Tooltip(message: label, child: child);
+    return Tooltip(
+      message: onPressed == null ? label : '$label. Нажмите для восстановления',
+      child: onPressed == null
+          ? child
+          : Semantics(
+              button: true,
+              label: label,
+              child: InkWell(
+                key: const ValueKey('save-recovery'),
+                borderRadius: BorderRadius.circular(8),
+                onTap: onPressed,
+                child: child,
+              ),
+            ),
+    );
   }
 }
 

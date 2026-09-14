@@ -22,6 +22,8 @@ final class CatalogControllerV2
   final CatalogUseCase _useCase;
   final StudyErrorReporterV2 _reporter;
   Future<void>? _initFuture;
+  var _loadEpoch = 0;
+  String? _pendingStudyId;
 
   CatalogControllerV2(this._useCase, this._reporter) : super(CatalogStateV2()) {
     _requireForeground();
@@ -76,13 +78,29 @@ final class CatalogControllerV2
     _CatalogStartedV2 event,
     Emitter<CatalogStateV2> emit,
   ) async {
+    final epoch = ++_loadEpoch;
+    _pendingStudyId = state.selectedStudyId;
     emit(state.copyWith(loadState: CatalogLoadStateV2.loading));
     final result = await _useCase.loadV1(
       params: CatalogLoadParamsV1(preferredStudy: state.selectedStudy),
     );
+    if (!_isCurrentLoad(epoch, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'CatalogControllerV2.load():'),
-      (snapshot) async => emit(_readyState(snapshot)),
+      (error) async {
+        if (!_isCurrentLoad(epoch, emit)) return;
+        _pendingStudyId = null;
+        await _emitFailure(
+          error,
+          emit,
+          'CatalogControllerV2.load():',
+          isCurrent: () => _isCurrentLoad(epoch, emit),
+        );
+      },
+      (snapshot) async {
+        if (!_isCurrentLoad(epoch, emit)) return;
+        _pendingStudyId = null;
+        emit(_readyState(snapshot));
+      },
     );
   }
 
@@ -90,13 +108,33 @@ final class CatalogControllerV2
     CatalogStudySelectedV2 event,
     Emitter<CatalogStateV2> emit,
   ) async {
+    if (event.study.id == _pendingStudyId ||
+        (event.study.id == state.selectedStudyId && _pendingStudyId == null)) {
+      return;
+    }
+    final epoch = ++_loadEpoch;
+    _pendingStudyId = event.study.id;
     emit(state.copyWith(loadState: CatalogLoadStateV2.loading));
     final result = await _useCase.loadV1(
       params: CatalogLoadParamsV1(preferredStudy: event.study),
     );
+    if (!_isCurrentLoad(epoch, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'CatalogControllerV2.select():'),
-      (snapshot) async => emit(_readyState(snapshot)),
+      (error) async {
+        if (!_isCurrentLoad(epoch, emit)) return;
+        _pendingStudyId = null;
+        await _emitFailure(
+          error,
+          emit,
+          'CatalogControllerV2.select():',
+          isCurrent: () => _isCurrentLoad(epoch, emit),
+        );
+      },
+      (snapshot) async {
+        if (!_isCurrentLoad(epoch, emit)) return;
+        _pendingStudyId = null;
+        emit(_readyState(snapshot));
+      },
     );
   }
 
@@ -119,10 +157,12 @@ final class CatalogControllerV2
 
   CatalogMutationV1? _mutationFor(CatalogEventV2 event) {
     final tree = state.tree;
+    final studyId = state.selectedStudyId;
     switch (event) {
       case CatalogStudyCreatedV2(:final study):
         return CatalogCreateStudyV1(study);
       case CatalogStudyUpdatedV2(:final study):
+        if (study.id != studyId) return null;
         final current = _study(study.id);
         return current == null
             ? null
@@ -134,14 +174,16 @@ final class CatalogControllerV2
                 ),
               );
       case CatalogStudyArchiveChangedV2(:final study):
+        if (study.id != studyId) return null;
         final current = _study(study.id);
         if (current == null || current.isArchived != study.isArchived) {
           return null;
         }
         return CatalogArchiveStudyV1(current);
       case CatalogSourceCreatedV2(:final source):
-        return CatalogCreateSourceV1(source);
+        return source.studyId == studyId ? CatalogCreateSourceV1(source) : null;
       case CatalogSourceUpdatedV2(:final source):
+        if (source.studyId != studyId) return null;
         final current = _source(source.id);
         return current == null
             ? null
@@ -153,14 +195,18 @@ final class CatalogControllerV2
                 ),
               );
       case CatalogSourceArchiveChangedV2(:final source):
+        if (source.studyId != studyId) return null;
         final current = _source(source.id);
         if (current == null || current.isArchived != source.isArchived) {
           return null;
         }
         return CatalogArchiveSourceV1(current);
       case CatalogSectionCreatedV2(:final section):
-        return CatalogCreateSectionV1(section);
+        return section.studyId == studyId
+            ? CatalogCreateSectionV1(section)
+            : null;
       case CatalogSectionUpdatedV2(:final section):
+        if (section.studyId != studyId) return null;
         final current = _section(section.id);
         return current == null
             ? null
@@ -172,14 +218,16 @@ final class CatalogControllerV2
                 ),
               );
       case CatalogSectionArchiveChangedV2(:final section):
+        if (section.studyId != studyId) return null;
         final current = _section(section.id);
         if (current == null || current.isArchived != section.isArchived) {
           return null;
         }
         return CatalogArchiveSectionV1(current);
       case CatalogLessonCreatedV2(:final lesson):
-        return CatalogCreateLessonV1(lesson);
+        return lesson.studyId == studyId ? CatalogCreateLessonV1(lesson) : null;
       case CatalogLessonUpdatedV2(:final lesson):
+        if (lesson.studyId != studyId) return null;
         final current = _lesson(lesson.id);
         return current == null
             ? null
@@ -194,12 +242,14 @@ final class CatalogControllerV2
                 ),
               );
       case CatalogLessonArchiveChangedV2(:final lesson):
+        if (lesson.studyId != studyId) return null;
         final current = _lesson(lesson.id);
         if (current == null || current.isArchived != lesson.isArchived) {
           return null;
         }
         return CatalogArchiveLessonV1(current);
       case CatalogLessonStatusChangedV2(:final change):
+        if (change.lesson.studyId != studyId) return null;
         final current = _lesson(change.lesson.id);
         if (current == null || current.status == change.status) return null;
         return CatalogChangeLessonStatusV1(
@@ -270,20 +320,37 @@ final class CatalogControllerV2
     LessonStatusChangeV1 change,
     Emitter<CatalogStateV2> emit,
   ) async {
+    final epoch = _loadEpoch;
+    final studyId = state.selectedStudyId;
     final result = await _useCase.mutateV1(
       params: CatalogMutationParamsV1(
         selectedStudy: state.selectedStudy,
         mutation: CatalogChangeLessonStatusV1(change),
       ),
     );
-    await result.fold((error) async {
-      if (error is OpenHomeworkErrorV1) {
-        await _report(error, 'CatalogControllerV2.changeStatus():');
-        emitEffect(ConfirmOpenHomeworkEffectV2(change.lesson.id));
-        return;
-      }
-      await _emitFailure(error, emit, 'CatalogControllerV2.changeStatus():');
-    }, (snapshot) async => emit(_readyState(snapshot)));
+    if (!_isCurrentMutation(epoch, studyId, emit)) return;
+    await result.fold(
+      (error) async {
+        if (!_isCurrentMutation(epoch, studyId, emit)) return;
+        if (error is OpenHomeworkErrorV1) {
+          await _report(error, 'CatalogControllerV2.changeStatus():');
+          if (!_isCurrentMutation(epoch, studyId, emit)) return;
+          emitEffect(ConfirmOpenHomeworkEffectV2(change.lesson.id));
+          return;
+        }
+        await _emitFailure(
+          error,
+          emit,
+          'CatalogControllerV2.changeStatus():',
+          isCurrent: () => _isCurrentMutation(epoch, studyId, emit),
+        );
+      },
+      (snapshot) async {
+        if (_isCurrentMutation(epoch, studyId, emit)) {
+          emit(_readyState(snapshot));
+        }
+      },
+    );
   }
 
   StudyV1? _study(String id) =>
@@ -334,15 +401,27 @@ final class CatalogControllerV2
     CatalogMutationV1 mutation,
     Emitter<CatalogStateV2> emit,
   ) async {
+    final epoch = _loadEpoch;
+    final studyId = state.selectedStudyId;
     final result = await _useCase.mutateV1(
       params: CatalogMutationParamsV1(
         selectedStudy: state.selectedStudy,
         mutation: mutation,
       ),
     );
+    if (!_isCurrentMutation(epoch, studyId, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'CatalogControllerV2.mutate():'),
-      (snapshot) async => emit(_readyState(snapshot)),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'CatalogControllerV2.mutate():',
+        isCurrent: () => _isCurrentMutation(epoch, studyId, emit),
+      ),
+      (snapshot) async {
+        if (_isCurrentMutation(epoch, studyId, emit)) {
+          emit(_readyState(snapshot));
+        }
+      },
     );
   }
 
@@ -358,9 +437,12 @@ final class CatalogControllerV2
   Future<void> _emitFailure(
     DomainError error,
     Emitter<CatalogStateV2> emit,
-    String operation,
-  ) async {
+    String operation, {
+    bool Function()? isCurrent,
+  }) async {
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     await _report(error, operation);
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     final failure = studyFailureKindV1(error);
     emit(
       state.copyWith(
@@ -370,6 +452,15 @@ final class CatalogControllerV2
     );
     emitEffect(CatalogFailureEffectV2(failure));
   }
+
+  bool _isCurrentLoad(int epoch, Emitter<CatalogStateV2> emit) =>
+      !emit.isDone && _loadEpoch == epoch;
+
+  bool _isCurrentMutation(
+    int epoch,
+    String? studyId,
+    Emitter<CatalogStateV2> emit,
+  ) => !emit.isDone && _loadEpoch == epoch && state.selectedStudyId == studyId;
 
   Future<void> _report(DomainError error, String operation) =>
       _reporter.reportDomainError(

@@ -6,8 +6,10 @@ final class _HomeworkView extends StatefulWidget {
   final int createRequest;
   final List<HomeworkTaskV1> task;
   final bool busy;
+  final SaveStateV1 saveState;
   final ValueChanged<HomeworkTaskV1> onChanged;
   final ValueChanged<HomeworkTaskV1> onAdded;
+  final VoidCallback onRetry;
   final ValueChanged<HomeworkTaskV1> onDelete;
   final void Function(HomeworkTaskV1, int) onMove;
   final ValueChanged<bool> onDirtyChanged;
@@ -18,8 +20,10 @@ final class _HomeworkView extends StatefulWidget {
     required this.createRequest,
     required this.task,
     required this.busy,
+    required this.saveState,
     required this.onChanged,
     required this.onAdded,
+    required this.onRetry,
     required this.onDelete,
     required this.onMove,
     required this.onDirtyChanged,
@@ -39,6 +43,8 @@ final class _HomeworkViewState extends State<_HomeworkView>
   var _creating = false;
   var _dirty = false;
   var _showPromptError = false;
+  HomeworkTaskV1? _submitted;
+  var _saveFailed = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -53,6 +59,36 @@ final class _HomeworkViewState extends State<_HomeworkView>
   void didUpdateWidget(_HomeworkView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.createRequest != oldWidget.createRequest) _scheduleCreate();
+    final submitted = _submitted;
+    if (submitted != null) {
+      if ({
+        SaveStateV1.failed,
+        SaveStateV1.conflict,
+      }.contains(widget.saveState)) {
+        _saveFailed = true;
+      }
+      final stored = widget.task
+          .where((task) => task.id == submitted.id)
+          .firstOrNull;
+      if (stored != null && _matches(stored, submitted)) {
+        final unchanged = _draftMatches(submitted);
+        _submitted = null;
+        _saveFailed = false;
+        if (unchanged) {
+          final wasDirty = _dirty;
+          _clearDraftFields();
+          _dirty = false;
+          if (wasDirty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) widget.onDirtyChanged(false);
+            });
+          }
+          return;
+        }
+        _editingId = stored.id;
+        _creating = false;
+      }
+    }
     if (_editingId != null &&
         widget.task.every((task) => task.id != _editingId)) {
       final wasDirty = _dirty;
@@ -87,7 +123,7 @@ final class _HomeworkViewState extends State<_HomeworkView>
   }
 
   void startCreate() {
-    if (!mounted || widget.busy) return;
+    if (!mounted || widget.busy || _submitted != null) return;
     if (_dirty) {
       _showFinishDraftMessage();
       return;
@@ -108,41 +144,47 @@ final class _HomeworkViewState extends State<_HomeworkView>
       setState(() => _showPromptError = true);
       return false;
     }
+    if (_submitted != null) {
+      if (_saveFailed && widget.saveState == SaveStateV1.failed) {
+        setState(() => _saveFailed = false);
+        widget.onRetry();
+      }
+      return true;
+    }
     final existing = widget.task
         .where((task) => task.id == _editingId)
         .firstOrNull;
+    late final HomeworkTaskV1 submitted;
     if (_creating) {
-      widget.onAdded(
-        HomeworkTaskV1(
-          id: const Uuid().v4(),
-          studyId: widget.studyId,
-          lessonId: widget.lessonId,
-          promptMarkdown: _prompt.text,
-          solutionMarkdown: _solution.text,
-          dueAt: _dueAt,
-          position: widget.task.length,
-        ),
+      submitted = HomeworkTaskV1(
+        id: const Uuid().v4(),
+        studyId: widget.studyId,
+        lessonId: widget.lessonId,
+        promptMarkdown: _prompt.text,
+        solutionMarkdown: _solution.text,
+        dueAt: _dueAt,
+        position: widget.task.length,
       );
+      widget.onAdded(submitted);
     } else if (existing != null) {
-      widget.onChanged(
-        existing.copyWith(
-          promptMarkdown: _prompt.text,
-          solutionMarkdown: _solution.text,
-          dueAt: () => _dueAt,
-        ),
+      submitted = existing.copyWith(
+        promptMarkdown: _prompt.text,
+        solutionMarkdown: _solution.text,
+        dueAt: () => _dueAt,
       );
+      widget.onChanged(submitted);
+    } else {
+      return false;
     }
-    _clearDraft();
+    setState(() {
+      _submitted = submitted;
+      _saveFailed = false;
+    });
     return true;
   }
 
   void discardDraft() {
     if (!mounted) return;
-    setState(_clearDraftFields);
-    _setDirty(false);
-  }
-
-  void _clearDraft() {
     setState(_clearDraftFields);
     _setDirty(false);
   }
@@ -154,10 +196,12 @@ final class _HomeworkViewState extends State<_HomeworkView>
     _solution.clear();
     _dueAt = null;
     _showPromptError = false;
+    _submitted = null;
+    _saveFailed = false;
   }
 
   void _edit(HomeworkTaskV1 task) {
-    if (_dirty && _editingId != task.id) {
+    if (_submitted != null || (_dirty && _editingId != task.id)) {
       _showFinishDraftMessage();
       return;
     }
@@ -174,6 +218,17 @@ final class _HomeworkViewState extends State<_HomeworkView>
     _syncTextController(_solution, task.solutionMarkdown);
     _dueAt = task.dueAt;
   }
+
+  bool _matches(HomeworkTaskV1 stored, HomeworkTaskV1 submitted) =>
+      stored.promptMarkdown == submitted.promptMarkdown &&
+      stored.solutionMarkdown == submitted.solutionMarkdown &&
+      stored.dueAt == submitted.dueAt &&
+      stored.status == submitted.status;
+
+  bool _draftMatches(HomeworkTaskV1 task) =>
+      _prompt.text == task.promptMarkdown &&
+      _solution.text == task.solutionMarkdown &&
+      _dueAt == task.dueAt;
 
   void _markDirty() {
     if (_showPromptError && _prompt.text.trim().isNotEmpty) {
@@ -497,15 +552,34 @@ final class _HomeworkViewState extends State<_HomeworkView>
             ],
           ),
           const SizedBox(height: 14),
+          if (_saveFailed) ...[
+            Text(
+              widget.saveState == SaveStateV1.conflict
+                  ? 'Конфликт версий. Перечитайте данные с сервера.'
+                  : 'Не удалось сохранить задание. Черновик сохранён.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: widget.saveState == SaveStateV1.conflict
+                    ? studyWarningColor
+                    : theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Wrap(
             alignment: WrapAlignment.end,
             spacing: 10,
             runSpacing: 10,
             children: [
-              TextButton(onPressed: discardDraft, child: const Text('Отмена')),
+              TextButton(
+                onPressed: widget.busy ? null : discardDraft,
+                child: const Text('Отмена'),
+              ),
               FilledButton(
-                onPressed: widget.busy ? null : commitDraft,
-                child: const Text('Сохранить'),
+                onPressed:
+                    widget.busy || widget.saveState == SaveStateV1.conflict
+                    ? null
+                    : commitDraft,
+                child: Text(_saveFailed ? 'Повторить' : 'Сохранить'),
               ),
             ],
           ),

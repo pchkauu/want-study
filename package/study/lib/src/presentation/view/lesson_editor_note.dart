@@ -622,7 +622,7 @@ final class _NoteBlockEditor extends StatefulWidget {
   final VoidCallback onConcept;
   final VoidCallback onSource;
   final Future<void> Function(String) onOpenUrl;
-  final VoidCallback onSlash;
+  final Future<void> Function() onSlash;
 
   const _NoteBlockEditor({
     required this.block,
@@ -728,8 +728,10 @@ final class _NoteBlockEditorState extends State<_NoteBlockEditor> {
         _openingCommands = true;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (!mounted) return;
-          widget.onSlash();
-          if (mounted) _openingCommands = false;
+          await widget.onSlash();
+          if (!mounted) return;
+          _openingCommands = false;
+          _focusNode.requestFocus();
         });
         return;
       }

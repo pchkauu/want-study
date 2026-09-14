@@ -8,10 +8,12 @@ import 'package:study/src/presentation/_barrel.dart';
 final class PublicationPageV1 extends StatefulWidget {
   final StudyV1 study;
   final PublicationControllerV2 controller;
+  final VoidCallback? onConfigureRepository;
 
   const PublicationPageV1({
     required this.study,
     required this.controller,
+    this.onConfigureRepository,
     super.key,
   });
 
@@ -74,45 +76,74 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
           >(
             bloc: _controller,
             listener: _onEffect,
-            builder: (context, state) => Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, _) {
-                        final compact = MediaQuery.sizeOf(context).width < 960;
-                        final controls = _buildControls(context, state);
-                        final diff = _buildDiff(context, state);
-                        if (compact) {
-                          return Column(
+            builder: (context, state) {
+              final visibleState =
+                  state.study?.id == widget.study.id &&
+                      state.study?.version == widget.study.version &&
+                      (state.snapshot == null ||
+                          state.snapshot?.studyId == widget.study.id) &&
+                      (state.preview == null ||
+                          state.preview?.studyId == widget.study.id) &&
+                      (state.publication == null ||
+                          state.publication?.studyId == widget.study.id)
+                  ? state
+                  : PublicationStateV2(study: widget.study);
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, _) {
+                          final compact =
+                              MediaQuery.sizeOf(context).width < 960;
+                          final controls = _buildControls(
+                            context,
+                            visibleState,
+                          );
+                          final diff = _buildDiff(context, visibleState);
+                          if (compact) {
+                            return Column(
+                              children: [
+                                SizedBox(height: 280, child: controls),
+                                const SizedBox(height: 16),
+                                Expanded(child: diff),
+                              ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              SizedBox(height: 280, child: controls),
-                              const SizedBox(height: 16),
+                              SizedBox(width: 360, child: controls),
+                              const SizedBox(width: 16),
                               Expanded(child: diff),
                             ],
                           );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SizedBox(width: 360, child: controls),
-                            const SizedBox(width: 16),
-                            Expanded(child: diff),
-                          ],
-                        );
-                      },
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
           ),
     );
   }
 
   Widget _buildControls(BuildContext context, PublicationStateV2 state) {
+    if (widget.study.localRepositoryPath.trim().isEmpty) {
+      return StudySurface(
+        child: StudyStateView(
+          icon: Icons.folder_off_outlined,
+          title: 'Git-репозиторий не выбран',
+          description: 'Укажите локальный репозиторий в настройках обучения.',
+          actionLabel: 'Настроить обучение',
+          actionIcon: Icons.settings_outlined,
+          onAction: widget.onConfigureRepository,
+        ),
+      );
+    }
     final busy =
         state.loadState == PublicationLoadStateV2.preparing ||
         state.loadState == PublicationLoadStateV2.publishing;
@@ -197,6 +228,17 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   }
 
   Widget _buildDiff(BuildContext context, PublicationStateV2 state) {
+    if (widget.study.localRepositoryPath.trim().isEmpty) {
+      return StudySurface(
+        padding: EdgeInsets.zero,
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        child: const StudyStateView(
+          icon: Icons.difference_outlined,
+          title: 'Предпросмотр недоступен',
+          description: 'Сначала выберите локальный Git-репозиторий.',
+        ),
+      );
+    }
     final preview = state.preview;
     return StudySurface(
       padding: EdgeInsets.zero,

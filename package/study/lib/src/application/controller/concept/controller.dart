@@ -19,6 +19,7 @@ final class ConceptControllerV1
     extends BlocWithEffects<ConceptEventV1, ConceptStateV1, ConceptEffectV1> {
   final ConceptUseCase _useCase;
   final StudyErrorReporterV2 _reporter;
+  var _studyEpoch = 0;
 
   ConceptControllerV1(this._useCase, this._reporter) : super(ConceptStateV1()) {
     _requireForeground();
@@ -37,14 +38,19 @@ final class ConceptControllerV1
     ConceptStartedV1 event,
     Emitter<ConceptStateV1> emit,
   ) async {
+    final epoch = ++_studyEpoch;
     emit(
       state.copyWith(
         loadState: ConceptLoadStateV1.loading,
         study: () => event.study,
+        graph: () => null,
         selectedConcept: () => null,
+        search: ConceptSearchV1(archiveScope: ArchiveScopeV1.includeArchived),
+        searchResult: const [],
+        failure: () => null,
       ),
     );
-    await _load(event.study, null, emit);
+    await _load(event.study, null, epoch, emit);
   }
 
   Future<void> _onSelected(
@@ -52,9 +58,10 @@ final class ConceptControllerV1
     Emitter<ConceptStateV1> emit,
   ) async {
     final study = state.study;
-    if (study == null) return;
+    if (study == null || event.concept.studyId != study.id) return;
+    final epoch = _studyEpoch;
     emit(state.copyWith(selectedConcept: () => event.concept));
-    await _load(study, event.concept, emit);
+    await _load(study, event.concept, epoch, emit);
   }
 
   Future<void> _onSearch(
@@ -63,6 +70,7 @@ final class ConceptControllerV1
   ) async {
     final study = state.study;
     if (study == null) return;
+    final epoch = _studyEpoch;
     final search = ConceptSearchV1(
       query: event.query,
       archiveScope: ArchiveScopeV1.includeArchived,
@@ -70,15 +78,24 @@ final class ConceptControllerV1
     final result = await _useCase.searchV1(
       params: ConceptSearchParamsV1(study: study, search: search),
     );
+    if (!_isCurrent(study.id, epoch, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'ConceptControllerV1.search():'),
-      (value) async => emit(
-        state.copyWith(
-          search: search,
-          searchResult: value.concept,
-          failure: () => null,
-        ),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'ConceptControllerV1.search():',
+        isCurrent: () => _isCurrent(study.id, epoch, emit),
       ),
+      (value) async {
+        if (!_isCurrent(study.id, epoch, emit)) return;
+        emit(
+          state.copyWith(
+            search: search,
+            searchResult: value.concept,
+            failure: () => null,
+          ),
+        );
+      },
     );
   }
 
@@ -96,10 +113,12 @@ final class ConceptControllerV1
 
   ConceptMutationV1? _mutationFor(ConceptEventV1 event) {
     final graph = state.graph;
+    final studyId = state.study?.id;
     switch (event) {
       case ConceptCreatedV1(:final concept):
-        return ConceptCreateV1(concept);
+        return concept.studyId == studyId ? ConceptCreateV1(concept) : null;
       case ConceptUpdatedV1(:final concept):
+        if (concept.studyId != studyId) return null;
         final current = graph?.concept
             .where((value) => value.id == concept.id)
             .firstOrNull;
@@ -112,6 +131,7 @@ final class ConceptControllerV1
                 ),
               );
       case ConceptArchiveChangedV1(:final concept):
+        if (concept.studyId != studyId) return null;
         final current = graph?.concept
             .where((value) => value.id == concept.id)
             .firstOrNull;
@@ -120,8 +140,11 @@ final class ConceptControllerV1
         }
         return ConceptArchiveV1(current);
       case ConceptRelationAddedV1(:final relation):
-        return ConceptPutRelationV1(relation);
+        return relation.studyId == studyId
+            ? ConceptPutRelationV1(relation)
+            : null;
       case ConceptRelationDeletedV1(:final relation):
+        if (relation.studyId != studyId) return null;
         final current = graph?.relation
             .where((value) => value.id == relation.id)
             .firstOrNull;
@@ -137,6 +160,7 @@ final class ConceptControllerV1
   ) async {
     final study = state.study;
     if (study == null) return;
+    final epoch = _studyEpoch;
     final result = await _useCase.mutateV1(
       params: ConceptMutationParamsV1(
         study: study,
@@ -144,9 +168,16 @@ final class ConceptControllerV1
         mutation: mutation,
       ),
     );
+    if (!_isCurrent(study.id, epoch, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'ConceptControllerV1.mutate():'),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'ConceptControllerV1.mutate():',
+        isCurrent: () => _isCurrent(study.id, epoch, emit),
+      ),
       (value) async {
+        if (!_isCurrent(study.id, epoch, emit)) return;
         emit(
           state.copyWith(
             loadState: ConceptLoadStateV1.ready,
@@ -163,6 +194,7 @@ final class ConceptControllerV1
   Future<void> _load(
     StudyV1 study,
     ConceptV1? selectedConcept,
+    int epoch,
     Emitter<ConceptStateV1> emit,
   ) async {
     final result = await _useCase.loadV1(
@@ -171,24 +203,35 @@ final class ConceptControllerV1
         selectedConcept: selectedConcept,
       ),
     );
+    if (!_isCurrent(study.id, epoch, emit)) return;
     await result.fold(
-      (error) => _emitFailure(error, emit, 'ConceptControllerV1.load():'),
-      (value) async => emit(
-        state.copyWith(
-          loadState: ConceptLoadStateV1.ready,
-          graph: () => value.graph,
-          selectedConcept: () => value.selectedConcept,
-          failure: () => null,
-        ),
+      (error) => _emitFailure(
+        error,
+        emit,
+        'ConceptControllerV1.load():',
+        isCurrent: () => _isCurrent(study.id, epoch, emit),
       ),
+      (value) async {
+        if (!_isCurrent(study.id, epoch, emit)) return;
+        emit(
+          state.copyWith(
+            loadState: ConceptLoadStateV1.ready,
+            graph: () => value.graph,
+            selectedConcept: () => value.selectedConcept,
+            failure: () => null,
+          ),
+        );
+      },
     );
   }
 
   Future<void> _emitFailure(
     DomainError error,
     Emitter<ConceptStateV1> emit,
-    String operation,
-  ) async {
+    String operation, {
+    bool Function()? isCurrent,
+  }) async {
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     await _reporter.reportDomainError(
       context: StudyErrorContextV1(
         operation: operation,
@@ -197,6 +240,7 @@ final class ConceptControllerV1
       error: error,
       stackTrace: error.stackTrace ?? StackTrace.current,
     );
+    if (emit.isDone || !(isCurrent?.call() ?? true)) return;
     final failure = studyFailureKindV1(error);
     emit(
       state.copyWith(
@@ -208,6 +252,9 @@ final class ConceptControllerV1
     );
     emitEffect(ConceptFailureEffectV1(failure));
   }
+
+  bool _isCurrent(String studyId, int epoch, Emitter<ConceptStateV1> emit) =>
+      !emit.isDone && _studyEpoch == epoch && state.study?.id == studyId;
 
   static void _requireForeground() {
     if (!LaunchMode.isForeground) {

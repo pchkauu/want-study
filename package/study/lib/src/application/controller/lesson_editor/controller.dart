@@ -127,7 +127,12 @@ final class LessonEditorControllerV2
     await result.fold(
       (error) async {
         if (epoch == _writeEpoch && !emit.isDone) {
-          await _emitFailure(error, emit, 'LessonEditorControllerV2.load():');
+          await _emitFailure(
+            error,
+            emit,
+            'LessonEditorControllerV2.load():',
+            epoch: epoch,
+          );
         }
       },
       (value) async {
@@ -177,20 +182,14 @@ final class LessonEditorControllerV2
     _LessonEditorWriteV2 event,
     Emitter<LessonEditorStateV2> emit,
   ) async {
-    if (event.epoch != _writeEpoch) {
-      _finishWrite(emit);
-      return;
-    }
+    if (event.epoch != _writeEpoch) return;
     emit(state.copyWith(saveState: SaveStateV1.saving));
     final succeeded = switch (event) {
       _LessonEditorSaveBlockV2() => await _saveBlock(event, emit),
       _LessonEditorMutationV2() => await _mutate(event, emit),
       _LessonEditorReloadV2() => await _reloadAfterDiscard(event, emit),
     };
-    if (event.epoch != _writeEpoch) {
-      _finishWrite(emit);
-      return;
-    }
+    if (event.epoch != _writeEpoch) return;
     if (succeeded && _failedWrite == event) {
       _failedWrite = null;
       _failedSaveState = null;
@@ -224,6 +223,7 @@ final class LessonEditorControllerV2
           error,
           emit,
           'LessonEditorControllerV2.saveBlock():',
+          epoch: event.epoch,
           saveState: error is ConflictErrorV1
               ? SaveStateV1.conflict
               : SaveStateV1.failed,
@@ -347,6 +347,7 @@ final class LessonEditorControllerV2
           error,
           emit,
           'LessonEditorControllerV2.mutate():',
+          epoch: queued.epoch,
           saveState: error is ConflictErrorV1
               ? SaveStateV1.conflict
               : SaveStateV1.failed,
@@ -484,7 +485,12 @@ final class LessonEditorControllerV2
     return result.fold(
       (error) async {
         if (event.epoch != _writeEpoch) return true;
-        await _emitFailure(error, emit, 'LessonEditorControllerV2.discard():');
+        await _emitFailure(
+          error,
+          emit,
+          'LessonEditorControllerV2.discard():',
+          epoch: event.epoch,
+        );
         return false;
       },
       (value) async {
@@ -569,6 +575,7 @@ final class LessonEditorControllerV2
     _storedBlockVersion.clear();
     _failedWrite = null;
     _failedSaveState = null;
+    _queuedWriteCount = 0;
     _writeEpoch++;
   }
 
@@ -576,9 +583,12 @@ final class LessonEditorControllerV2
     DomainError error,
     Emitter<LessonEditorStateV2> emit,
     String operation, {
+    int? epoch,
     SaveStateV1 saveState = SaveStateV1.failed,
   }) async {
+    if (emit.isDone || (epoch != null && epoch != _writeEpoch)) return;
     await _report(error, operation);
+    if (emit.isDone || (epoch != null && epoch != _writeEpoch)) return;
     final failure = studyFailureKindV1(error);
     emit(
       state.copyWith(
