@@ -30,14 +30,27 @@ final class StudyRootPageV1 extends StatefulWidget {
 final class _StudyRootPageV1State extends State<StudyRootPageV1> {
   late final CatalogControllerV2 _catalogController;
   var _selectedPage = 0;
+  var _isActive = true;
 
   @override
   void initState() {
     super.initState();
     _catalogController = widget.catalogController;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _catalogController.init();
+      if (mounted && _isActive) _catalogController.init();
     });
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    super.deactivate();
   }
 
   @override
@@ -210,10 +223,11 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     );
   }
 
-  Future<void> _onEffect(BuildContext context, CatalogEffectV2 effect) async {
+  Future<void> _onEffect(BuildContext _, CatalogEffectV2 effect) async {
+    if (!mounted || !_isActive) return;
     switch (effect) {
       case CatalogFailureEffectV2():
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(content: Text('Не удалось выполнить операцию')),
         );
       case ConfirmOpenHomeworkEffectV2():
@@ -240,11 +254,14 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
             ],
           ),
         );
+        if (!mounted || !_isActive) return;
         if (confirmed ?? false) {
+          final currentLesson = _findLesson(effect.lessonId);
+          if (currentLesson == null) return;
           _catalogController.add(
             CatalogLessonStatusChangedV2(
               LessonStatusChangeV1(
-                lesson: lesson,
+                lesson: currentLesson,
                 status: LessonStatusV1.mastered,
                 acknowledgeOpenHomework: true,
               ),
@@ -267,11 +284,12 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     return null;
   }
 
-  Future<void> _createStudy(BuildContext context, [StudyV1? existing]) async {
+  Future<void> _createStudy(BuildContext _, [StudyV1? existing]) async {
+    if (!mounted || !_isActive) return;
     final title = TextEditingController(text: existing?.title);
     final goal = TextEditingController(text: existing?.goal);
     var repositoryPath = existing?.localRepositoryPath ?? '';
-    final result = await showDialog<StudyV1>(
+    final result = await showStudyDialogV1<StudyV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -307,6 +325,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
                       onPressed: () async {
                         final selection = await _catalogController
                             .pickRepository();
+                        if (!mounted || !_isActive || !context.mounted) return;
                         if (selection.path case final path?) {
                           setDialogState(() => repositoryPath = path);
                         }
@@ -352,7 +371,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     );
     title.dispose();
     goal.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _catalogController.add(
         existing == null
             ? CatalogStudyCreatedV2(result)
@@ -362,15 +381,16 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
   }
 
   Future<void> _createSource(
-    BuildContext context,
+    BuildContext _,
     StudyV1 study, [
     LearningSourceV1? existing,
   ]) async {
+    if (!mounted || !_isActive) return;
     final title = TextEditingController(text: existing?.title);
     final author = TextEditingController(text: existing?.author);
     final url = TextEditingController(text: existing?.url);
     var type = existing?.type ?? LearningSourceTypeV1.course;
-    final result = await showDialog<LearningSourceV1>(
+    final result = await showStudyDialogV1<LearningSourceV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -458,7 +478,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     title.dispose();
     author.dispose();
     url.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _catalogController.add(
         existing == null
             ? CatalogSourceCreatedV2(result)
@@ -468,13 +488,14 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
   }
 
   Future<void> _createSection(
-    BuildContext context,
+    BuildContext _,
     StudyV1 study,
     LearningSourceNodeV1 node, [
     SectionV1? existing,
   ]) async {
+    if (!mounted || !_isActive) return;
     final title = TextEditingController(text: existing?.title);
-    final result = await showDialog<SectionV1>(
+    final result = await showStudyDialogV1<SectionV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -512,7 +533,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
       ),
     );
     title.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _catalogController.add(
         existing == null
             ? CatalogSectionCreatedV2(result)
@@ -522,18 +543,19 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
   }
 
   Future<void> _createLesson(
-    BuildContext context,
+    BuildContext _,
     StudyV1 study,
     LearningSourceNodeV1 node,
     SectionV1? section, [
     LessonV1? existing,
   ]) async {
+    if (!mounted || !_isActive) return;
     final title = TextEditingController(text: existing?.title);
     final sourcePosition = TextEditingController(
       text: existing?.sourcePosition,
     );
     final url = TextEditingController(text: existing?.url);
-    final result = await showDialog<LessonV1>(
+    final result = await showStudyDialogV1<LessonV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -608,7 +630,7 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     title.dispose();
     sourcePosition.dispose();
     url.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _catalogController.add(
         existing == null
             ? CatalogLessonCreatedV2(result)
@@ -617,7 +639,8 @@ final class _StudyRootPageV1State extends State<StudyRootPageV1> {
     }
   }
 
-  Future<void> _openLesson(BuildContext context, LessonV1 lesson) {
+  Future<void> _openLesson(BuildContext _, LessonV1 lesson) {
+    if (!mounted || !_isActive) return Future.value();
     return Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => LessonEditorPageV1(
@@ -733,6 +756,7 @@ final class _StudyHeader extends StatelessWidget {
                 DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: selectedStudyId,
+                    isExpanded: MediaQuery.sizeOf(context).width < 960,
                     isDense: true,
                     borderRadius: BorderRadius.circular(14),
                     style: theme.textTheme.titleLarge,

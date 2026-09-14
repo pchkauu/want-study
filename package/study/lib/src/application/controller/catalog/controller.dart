@@ -27,40 +27,23 @@ final class CatalogControllerV2
     _requireForeground();
     on<_CatalogStartedV2>(_onStarted, transformer: restartable());
     on<CatalogStudySelectedV2>(_onSelected, transformer: restartable());
-    on<CatalogStudyCreatedV2>(_onStudyCreated, transformer: sequential());
-    on<CatalogStudyUpdatedV2>(_onStudyUpdated, transformer: sequential());
-    on<CatalogStudyArchiveChangedV2>(
-      _onStudyArchiveChanged,
-      transformer: sequential(),
-    );
-    on<CatalogSourceCreatedV2>(_onSourceCreated, transformer: sequential());
-    on<CatalogSourceUpdatedV2>(_onSourceUpdated, transformer: sequential());
-    on<CatalogSourceArchiveChangedV2>(
-      _onSourceArchiveChanged,
-      transformer: sequential(),
-    );
-    on<CatalogSectionCreatedV2>(_onSectionCreated, transformer: sequential());
-    on<CatalogSectionUpdatedV2>(_onSectionUpdated, transformer: sequential());
-    on<CatalogSectionArchiveChangedV2>(
-      _onSectionArchiveChanged,
-      transformer: sequential(),
-    );
-    on<CatalogLessonCreatedV2>(_onLessonCreated, transformer: sequential());
-    on<CatalogLessonUpdatedV2>(_onLessonUpdated, transformer: sequential());
-    on<CatalogLessonArchiveChangedV2>(
-      _onLessonArchiveChanged,
-      transformer: sequential(),
-    );
-    on<CatalogSourceMoveRequestedV2>(_onSourceMove, transformer: sequential());
-    on<CatalogSectionMoveRequestedV2>(
-      _onSectionMove,
-      transformer: sequential(),
-    );
-    on<CatalogLessonMoveRequestedV2>(_onLessonMove, transformer: sequential());
-    on<CatalogLessonStatusChangedV2>(
-      _onLessonStatusChanged,
-      transformer: sequential(),
-    );
+    on<_CatalogMutationQueuedV2>(_onMutationQueued, transformer: sequential());
+    on<CatalogStudyCreatedV2>(_queueMutation);
+    on<CatalogStudyUpdatedV2>(_queueMutation);
+    on<CatalogStudyArchiveChangedV2>(_queueMutation);
+    on<CatalogSourceCreatedV2>(_queueMutation);
+    on<CatalogSourceUpdatedV2>(_queueMutation);
+    on<CatalogSourceArchiveChangedV2>(_queueMutation);
+    on<CatalogSectionCreatedV2>(_queueMutation);
+    on<CatalogSectionUpdatedV2>(_queueMutation);
+    on<CatalogSectionArchiveChangedV2>(_queueMutation);
+    on<CatalogLessonCreatedV2>(_queueMutation);
+    on<CatalogLessonUpdatedV2>(_queueMutation);
+    on<CatalogLessonArchiveChangedV2>(_queueMutation);
+    on<CatalogSourceMoveRequestedV2>(_queueMutation);
+    on<CatalogSectionMoveRequestedV2>(_queueMutation);
+    on<CatalogLessonMoveRequestedV2>(_queueMutation);
+    on<CatalogLessonStatusChangedV2>(_queueMutation);
   }
 
   Future<void> init() => _initFuture ??= _initialize();
@@ -117,155 +100,209 @@ final class CatalogControllerV2
     );
   }
 
-  Future<void> _onStudyCreated(
-    CatalogStudyCreatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogCreateStudyV1(event.study), emit);
-
-  Future<void> _onStudyUpdated(
-    CatalogStudyUpdatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogUpdateStudyV1(event.study), emit);
-
-  Future<void> _onStudyArchiveChanged(
-    CatalogStudyArchiveChangedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogArchiveStudyV1(event.study), emit);
-
-  Future<void> _onSourceCreated(
-    CatalogSourceCreatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogCreateSourceV1(event.source), emit);
-
-  Future<void> _onSourceUpdated(
-    CatalogSourceUpdatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogUpdateSourceV1(event.source), emit);
-
-  Future<void> _onSourceArchiveChanged(
-    CatalogSourceArchiveChangedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogArchiveSourceV1(event.source), emit);
-
-  Future<void> _onSectionCreated(
-    CatalogSectionCreatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogCreateSectionV1(event.section), emit);
-
-  Future<void> _onSectionUpdated(
-    CatalogSectionUpdatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogUpdateSectionV1(event.section), emit);
-
-  Future<void> _onSectionArchiveChanged(
-    CatalogSectionArchiveChangedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogArchiveSectionV1(event.section), emit);
-
-  Future<void> _onLessonCreated(
-    CatalogLessonCreatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogCreateLessonV1(event.lesson), emit);
-
-  Future<void> _onLessonUpdated(
-    CatalogLessonUpdatedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogUpdateLessonV1(event.lesson), emit);
-
-  Future<void> _onLessonArchiveChanged(
-    CatalogLessonArchiveChangedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) => _mutate(CatalogArchiveLessonV1(event.lesson), emit);
-
-  Future<void> _onSourceMove(
-    CatalogSourceMoveRequestedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) async {
-    final tree = state.tree;
-    if (tree == null) return;
-    final reorder = _moveItems(
-      item: event.source,
-      items: tree.source.map((node) => node.source).toList(),
-      offset: event.offset,
-      id: (value) => value.id,
-      position: (value) => value.position,
-      version: (value) => value.version,
-    );
-    if (reorder == null) return;
-    await _mutate(
-      CatalogReorderMaterialV1(study: tree.study, source: reorder),
-      emit,
-    );
+  void _queueMutation(CatalogEventV2 event, Emitter<CatalogStateV2> emit) {
+    add(_CatalogMutationQueuedV2(event));
   }
 
-  Future<void> _onSectionMove(
-    CatalogSectionMoveRequestedV2 event,
+  Future<void> _onMutationQueued(
+    _CatalogMutationQueuedV2 queued,
     Emitter<CatalogStateV2> emit,
   ) async {
-    final tree = state.tree;
-    if (tree == null) return;
-    final reorder = _moveItems(
-      item: event.section,
-      items: tree.source
-          .where((node) => node.source.id == event.section.sourceId)
-          .expand((node) => node.section)
-          .toList(),
-      offset: event.offset,
-      id: (value) => value.id,
-      position: (value) => value.position,
-      version: (value) => value.version,
-    );
-    if (reorder == null) return;
-    await _mutate(
-      CatalogReorderMaterialV1(study: tree.study, section: reorder),
-      emit,
-    );
+    final mutation = _mutationFor(queued.event);
+    if (mutation == null) return;
+    if (mutation case CatalogChangeLessonStatusV1(:final change)) {
+      await _changeLessonStatus(change, emit);
+      return;
+    }
+    await _mutate(mutation, emit);
   }
 
-  Future<void> _onLessonMove(
-    CatalogLessonMoveRequestedV2 event,
-    Emitter<CatalogStateV2> emit,
-  ) async {
+  CatalogMutationV1? _mutationFor(CatalogEventV2 event) {
     final tree = state.tree;
-    if (tree == null) return;
-    final reorder = _moveItems(
-      item: event.lesson,
-      items: tree.source
-          .where((node) => node.source.id == event.lesson.sourceId)
-          .expand((node) => node.lesson)
-          .where((lesson) => lesson.sectionId == event.lesson.sectionId)
-          .toList(),
-      offset: event.offset,
-      id: (value) => value.id,
-      position: (value) => value.position,
-      version: (value) => value.version,
-    );
-    if (reorder == null) return;
-    await _mutate(
-      CatalogReorderMaterialV1(study: tree.study, lesson: reorder),
-      emit,
-    );
+    switch (event) {
+      case CatalogStudyCreatedV2(:final study):
+        return CatalogCreateStudyV1(study);
+      case CatalogStudyUpdatedV2(:final study):
+        final current = _study(study.id);
+        return current == null
+            ? null
+            : CatalogUpdateStudyV1(
+                study.copyWith(
+                  version: current.version,
+                  contentRevision: current.contentRevision,
+                  isArchived: current.isArchived,
+                ),
+              );
+      case CatalogStudyArchiveChangedV2(:final study):
+        final current = _study(study.id);
+        if (current == null || current.isArchived != study.isArchived) {
+          return null;
+        }
+        return CatalogArchiveStudyV1(current);
+      case CatalogSourceCreatedV2(:final source):
+        return CatalogCreateSourceV1(source);
+      case CatalogSourceUpdatedV2(:final source):
+        final current = _source(source.id);
+        return current == null
+            ? null
+            : CatalogUpdateSourceV1(
+                source.copyWith(
+                  position: current.position,
+                  version: current.version,
+                  isArchived: current.isArchived,
+                ),
+              );
+      case CatalogSourceArchiveChangedV2(:final source):
+        final current = _source(source.id);
+        if (current == null || current.isArchived != source.isArchived) {
+          return null;
+        }
+        return CatalogArchiveSourceV1(current);
+      case CatalogSectionCreatedV2(:final section):
+        return CatalogCreateSectionV1(section);
+      case CatalogSectionUpdatedV2(:final section):
+        final current = _section(section.id);
+        return current == null
+            ? null
+            : CatalogUpdateSectionV1(
+                section.copyWith(
+                  position: current.position,
+                  version: current.version,
+                  isArchived: current.isArchived,
+                ),
+              );
+      case CatalogSectionArchiveChangedV2(:final section):
+        final current = _section(section.id);
+        if (current == null || current.isArchived != section.isArchived) {
+          return null;
+        }
+        return CatalogArchiveSectionV1(current);
+      case CatalogLessonCreatedV2(:final lesson):
+        return CatalogCreateLessonV1(lesson);
+      case CatalogLessonUpdatedV2(:final lesson):
+        final current = _lesson(lesson.id);
+        return current == null
+            ? null
+            : CatalogUpdateLessonV1(
+                lesson.copyWith(
+                  position: current.position,
+                  status: current.status,
+                  startedAt: () => current.startedAt,
+                  masteredAt: () => current.masteredAt,
+                  version: current.version,
+                  isArchived: current.isArchived,
+                ),
+              );
+      case CatalogLessonArchiveChangedV2(:final lesson):
+        final current = _lesson(lesson.id);
+        if (current == null || current.isArchived != lesson.isArchived) {
+          return null;
+        }
+        return CatalogArchiveLessonV1(current);
+      case CatalogLessonStatusChangedV2(:final change):
+        final current = _lesson(change.lesson.id);
+        if (current == null || current.status == change.status) return null;
+        return CatalogChangeLessonStatusV1(
+          LessonStatusChangeV1(
+            lesson: current,
+            status: change.status,
+            acknowledgeOpenHomework: change.acknowledgeOpenHomework,
+          ),
+        );
+      case CatalogSourceMoveRequestedV2(:final source, :final offset):
+        if (tree == null) return null;
+        final current = _source(source.id);
+        if (current == null) return null;
+        final reorder = _moveItems(
+          item: current,
+          items: tree.source.map((node) => node.source).toList(),
+          offset: offset,
+          id: (value) => value.id,
+          position: (value) => value.position,
+          version: (value) => value.version,
+        );
+        return reorder == null
+            ? null
+            : CatalogReorderMaterialV1(study: tree.study, source: reorder);
+      case CatalogSectionMoveRequestedV2(:final section, :final offset):
+        if (tree == null) return null;
+        final current = _section(section.id);
+        if (current == null) return null;
+        final reorder = _moveItems(
+          item: current,
+          items: tree.source
+              .where((node) => node.source.id == current.sourceId)
+              .expand((node) => node.section)
+              .toList(),
+          offset: offset,
+          id: (value) => value.id,
+          position: (value) => value.position,
+          version: (value) => value.version,
+        );
+        return reorder == null
+            ? null
+            : CatalogReorderMaterialV1(study: tree.study, section: reorder);
+      case CatalogLessonMoveRequestedV2(:final lesson, :final offset):
+        if (tree == null) return null;
+        final current = _lesson(lesson.id);
+        if (current == null) return null;
+        final reorder = _moveItems(
+          item: current,
+          items: tree.source
+              .where((node) => node.source.id == current.sourceId)
+              .expand((node) => node.lesson)
+              .where((value) => value.sectionId == current.sectionId)
+              .toList(),
+          offset: offset,
+          id: (value) => value.id,
+          position: (value) => value.position,
+          version: (value) => value.version,
+        );
+        return reorder == null
+            ? null
+            : CatalogReorderMaterialV1(study: tree.study, lesson: reorder);
+      default:
+        return null;
+    }
   }
 
-  Future<void> _onLessonStatusChanged(
-    CatalogLessonStatusChangedV2 event,
+  Future<void> _changeLessonStatus(
+    LessonStatusChangeV1 change,
     Emitter<CatalogStateV2> emit,
   ) async {
     final result = await _useCase.mutateV1(
       params: CatalogMutationParamsV1(
         selectedStudy: state.selectedStudy,
-        mutation: CatalogChangeLessonStatusV1(event.change),
+        mutation: CatalogChangeLessonStatusV1(change),
       ),
     );
     await result.fold((error) async {
       if (error is OpenHomeworkErrorV1) {
         await _report(error, 'CatalogControllerV2.changeStatus():');
-        emitEffect(ConfirmOpenHomeworkEffectV2(event.change.lesson.id));
+        emitEffect(ConfirmOpenHomeworkEffectV2(change.lesson.id));
         return;
       }
       await _emitFailure(error, emit, 'CatalogControllerV2.changeStatus():');
     }, (snapshot) async => emit(_readyState(snapshot)));
   }
+
+  StudyV1? _study(String id) =>
+      state.study.where((value) => value.id == id).firstOrNull;
+
+  LearningSourceV1? _source(String id) => state.tree?.source
+      .map((node) => node.source)
+      .where((value) => value.id == id)
+      .firstOrNull;
+
+  SectionV1? _section(String id) => state.tree?.source
+      .expand((node) => node.section)
+      .where((value) => value.id == id)
+      .firstOrNull;
+
+  LessonV1? _lesson(String id) => state.tree?.source
+      .expand((node) => node.lesson)
+      .where((value) => value.id == id)
+      .firstOrNull;
 
   List<ReorderItemV1>? _moveItems<T>({
     required T item,

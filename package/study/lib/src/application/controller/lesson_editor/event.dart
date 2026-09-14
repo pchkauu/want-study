@@ -135,14 +135,40 @@ final class LessonEditorNavigationRequestedV2 extends LessonEditorEventV2 {
   List<Object?> get props => const [];
 }
 
-final class _LessonEditorSaveBlockV2 extends LessonEditorEventV2 {
+sealed class _LessonEditorWriteV2 extends LessonEditorEventV2 {
+  final int epoch;
+
+  const _LessonEditorWriteV2({required this.epoch});
+}
+
+final class _LessonEditorSaveBlockV2 extends _LessonEditorWriteV2 {
   final String blockId;
   final int draftRevision;
 
-  const _LessonEditorSaveBlockV2(this.blockId, this.draftRevision);
+  const _LessonEditorSaveBlockV2({
+    required super.epoch,
+    required this.blockId,
+    required this.draftRevision,
+  });
 
   @override
-  List<Object?> get props => [blockId, draftRevision];
+  List<Object?> get props => [epoch, blockId, draftRevision];
+}
+
+final class _LessonEditorMutationV2 extends _LessonEditorWriteV2 {
+  final LessonEditorEventV2 event;
+
+  const _LessonEditorMutationV2({required super.epoch, required this.event});
+
+  @override
+  List<Object?> get props => [epoch, event];
+}
+
+final class _LessonEditorReloadV2 extends _LessonEditorWriteV2 {
+  const _LessonEditorReloadV2({required super.epoch});
+
+  @override
+  List<Object?> get props => [epoch];
 }
 
 int _blockEventHash(NoteBlockV1 value) => Object.hash(

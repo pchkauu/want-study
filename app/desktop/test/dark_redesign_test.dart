@@ -56,6 +56,10 @@ void main() {
         status: LessonStatusV1.mastered,
       ),
     );
+    registerFallbackValue(_note());
+    registerFallbackValue(_workspace().task.single);
+    registerFallbackValue(_conceptGraph().concept.first);
+    registerFallbackValue(ConceptSearchV1());
   });
 
   testWidgets('loading, empty and catalog error use stable states', (
@@ -76,6 +80,15 @@ void main() {
     studies.complete(const []);
     await _pumpCatalogState(tester, repositories, 'ready');
     expect(find.text('Начните новое обучение'), findsOneWidget);
+    tester.view.physicalSize = const Size(900, 720);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Создать обучение'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1024, 720);
+    await tester.pumpAndSettle();
 
     when(
       () =>
@@ -181,6 +194,21 @@ void main() {
     tester.view.physicalSize = const Size(900, 720);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('Добавить источник'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Раздел'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Урок'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
     tester.view.physicalSize = const Size(1024, 720);
     await tester.pumpAndSettle();
 
@@ -208,6 +236,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Срок: 20.09.2026'), findsOneWidget);
     expect(find.text('Решение'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    tester.view.physicalSize = const Size(900, 720);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Добавить задание'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Файлы').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Добавить файл'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('discard reloads server text in active editor', (tester) async {
+    final repositories = await _repositoriesForTest(
+      config: const Config(autosaveDelay: Duration(days: 1)),
+    );
+    _stubCatalog(repositories.study);
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async => _workspace());
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    final editor = find.byType(TextField).first;
+
+    await tester.enterText(editor, 'Черновик');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Изменения не сохранены'), findsOneWidget);
+    await tester.tap(find.text('Сбросить и перечитать'));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextField>(editor).controller?.text, _note().markdown);
     expect(tester.takeException(), isNull);
   });
 
@@ -272,6 +346,130 @@ void main() {
     expect(find.text('Псевдонимы'), findsOneWidget);
     expect(find.text('Привязки к блокам: 1'), findsOneWidget);
     expect(find.text('Связи'), findsOneWidget);
+    tester.view.physicalSize = const Size(900, 720);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Добавить связь'));
+    await tester.pumpAndSettle();
+    expect(find.text('Новая связь'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('first concept renders and opens inspector without graph crash', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    var graph = ConceptGraphV1();
+    when(
+      () => repositories.knowledge.getGraph(
+        study: _study,
+        selectedConcept: any(named: 'selectedConcept'),
+      ),
+    ).thenAnswer((_) async => graph);
+    when(() => repositories.knowledge.createConcept(any())).thenAnswer((call) {
+      final concept = call.positionalArguments.single as ConceptV1;
+      graph = ConceptGraphV1(concept: [concept]);
+      return Future.value(concept);
+    });
+    when(
+      () => repositories.knowledge.searchConcepts(
+        study: _study,
+        search: any(named: 'search'),
+      ),
+    ).thenAnswer((_) async => graph.concept);
+    await _setSurface(tester, const Size(900, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.hub_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Граф пока пуст'), findsOneWidget);
+    await tester.tap(find.text('Добавить понятие'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    final title = find
+        .descendant(of: dialog, matching: find.byType(TextField))
+        .first;
+    await tester.enterText(title, 'Единственное понятие');
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Единственное понятие'), findsWidgets);
+    expect(find.text('Привязки к блокам: 0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('concept graph survives topology changes and page switches', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    var graph = _singleConceptGraph();
+    when(
+      () => repositories.knowledge.getGraph(
+        study: _study,
+        selectedConcept: any(named: 'selectedConcept'),
+      ),
+    ).thenAnswer((_) async => graph);
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.hub_outlined));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    graph = _conceptGraph();
+    await tester.tap(find.byIcon(Icons.space_dashboard_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.hub_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Гарантии исключений'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    tester.view.physicalSize = const Size(900, 720);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    for (final size in const [Size(1440, 900), Size(900, 720)]) {
+      tester.view.physicalSize = size;
+      await tester.tap(find.byIcon(Icons.space_dashboard_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.hub_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('RAII'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('late editor failure after disposal has no UI side effect', (
+    tester,
+  ) async {
+    final repositories = await _repositoriesForTest();
+    _stubCatalog(repositories.study);
+    when(() => repositories.lesson.getWorkspace(_studyingLesson))
+        .thenAnswer((_) async => _workspace());
+    final update = Completer<HomeworkTaskV1>();
+    when(() => repositories.lesson.updateTask(any()))
+        .thenAnswer((_) => update.future);
+    await _setSurface(tester, const Size(1024, 720));
+    await tester.pumpWidget(_testApp(repositories.facade.buildRoot()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu_book_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_lessonTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Домашняя работа').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump();
+    await untilCalled(() => repositories.lesson.updateTask(any()));
+    await tester.pumpWidget(const SizedBox.shrink());
+    update.completeError(const UnavailableErrorV1());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -339,6 +537,11 @@ void main() {
     await tester.tap(find.text('Построить предпросмотр'));
     await tester.pumpAndSettle();
     expect(find.text('Проверка не выполнена'), findsOneWidget);
+    for (final size in const [Size(900, 720), Size(1440, 900)]) {
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('unavailable API has dark diagnostic state', (tester) async {
@@ -358,6 +561,11 @@ void main() {
       find.byKey(const ValueKey('golden-root')),
       matchesGoldenFile('golden/api_unavailable_dark.png'),
     );
+    for (final size in const [Size(1024, 720), Size(900, 720)]) {
+      tester.view.physicalSize = size;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
   });
 }
 
@@ -370,10 +578,12 @@ final class _Repositories {
   late StudyFeatureFacadeV2 facade;
 }
 
-Future<_Repositories> _repositoriesForTest() async {
+Future<_Repositories> _repositoriesForTest({
+  Config config = const Config(autosaveDelay: Duration.zero),
+}) async {
   final repositories = _Repositories();
   repositories.facade = await initPackage(
-    config: const Config(autosaveDelay: Duration.zero),
+    config: config,
     resetForTesting: true,
     dependencies: Dependencies(
       studyRepository: repositories.study,
@@ -636,6 +846,17 @@ ConceptGraphV1 _conceptGraph() {
       ),
     ],
   );
+}
+
+ConceptGraphV1 _singleConceptGraph() {
+  final concept = ConceptV1(
+    id: 'concept-raii',
+    studyId: 'study-1',
+    title: 'RAII',
+    exportSlug: 'raii',
+    descriptionMarkdown: 'Управление ресурсом через время жизни объекта.',
+  );
+  return ConceptGraphV1(concept: [concept]);
 }
 
 ExportSnapshotV1 _snapshot() => ExportSnapshotV1(

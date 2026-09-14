@@ -3,6 +3,22 @@ import 'package:study/src/domain/_barrel.dart';
 
 const studyWarningColor = Color(0xFFF2B35F);
 
+Future<T?> showStudyDialogV1<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) async {
+  ModalRoute<dynamic>? route;
+  final result = await showDialog<T>(
+    context: context,
+    builder: (dialogContext) {
+      route ??= ModalRoute.of(dialogContext);
+      return builder(dialogContext);
+    },
+  );
+  await route?.completed;
+  return result;
+}
+
 final class StudySurface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -104,46 +120,61 @@ final class StudyStateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: StudySurface(
-          padding: const EdgeInsets.all(36),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(18),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: constraints.hasBoundedHeight ? constraints.maxHeight : 0,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: StudySurface(
+                padding: const EdgeInsets.all(36),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.14,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Icon(
+                        icon,
+                        color: theme.colorScheme.primary,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      title,
+                      style: theme.textTheme.headlineSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (actionLabel != null && onAction != null) ...[
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: onAction,
+                        icon: Icon(actionIcon),
+                        label: Text(actionLabel!),
+                      ),
+                    ],
+                  ],
                 ),
-                child: Icon(icon, color: theme.colorScheme.primary, size: 28),
               ),
-              const SizedBox(height: 22),
-              Text(
-                title,
-                style: theme.textTheme.headlineSmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                description,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (actionLabel != null && onAction != null) ...[
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: onAction,
-                  icon: Icon(actionIcon),
-                  label: Text(actionLabel!),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),

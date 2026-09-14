@@ -191,6 +191,15 @@ final class CatalogLessonStatusChangedV2 extends CatalogEventV2 {
   List<Object?> get props => [change];
 }
 
+final class _CatalogMutationQueuedV2 extends CatalogEventV2 {
+  final CatalogEventV2 event;
+
+  const _CatalogMutationQueuedV2(this.event);
+
+  @override
+  List<Object?> get props => [event];
+}
+
 int _studyEventHash(StudyV1 value) => Object.hash(
   value.title,
   value.goal,

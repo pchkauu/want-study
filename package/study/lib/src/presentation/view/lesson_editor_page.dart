@@ -25,11 +25,24 @@ final class LessonEditorPageV1 extends StatefulWidget {
 
 final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
   late final LessonEditorControllerV2 _controller;
+  var _isActive = true;
 
   @override
   void initState() {
     super.initState();
     _controller = widget.controller..add(LessonEditorStartedV2(widget.lesson));
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    super.deactivate();
   }
 
   @override
@@ -145,10 +158,12 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         onAction: () => _controller.add(LessonEditorStartedV2(widget.lesson)),
       );
     }
+    final busy = state.saveState == SaveStateV1.saving;
     return TabBarView(
       children: [
         _NoteView(
           block: workspace.block,
+          busy: busy,
           onChanged: (block) =>
               _controller.add(LessonEditorBlockChangedV2(block)),
           onAdd: () => _addBlock(context, workspace.block.length),
@@ -159,6 +174,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         ),
         _HomeworkView(
           task: workspace.task,
+          busy: busy,
           onChanged: (task) => _controller.add(LessonEditorTaskChangedV2(task)),
           onAdd: () => _addTask(context, workspace.task.length),
           onEdit: (task) => _addTask(context, task.position, task),
@@ -168,6 +184,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         ),
         _FileView(
           file: workspace.file,
+          busy: busy,
           onChanged: (file) => _controller.add(LessonEditorFileChangedV2(file)),
           onAdd: () => _addFile(context, workspace.task),
           onDelete: (file) => _deleteItem(context, file),
@@ -176,7 +193,8 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     );
   }
 
-  Future<void> _deleteItem(BuildContext context, Object item) async {
+  Future<void> _deleteItem(BuildContext _, Object item) async {
+    if (!mounted || !_isActive) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -194,7 +212,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         ],
       ),
     );
-    if (confirmed ?? false) {
+    if (mounted && _isActive && (confirmed ?? false)) {
       switch (item) {
         case final NoteBlockV1 value:
           _controller.add(LessonEditorBlockDeletedV2(value));
@@ -206,15 +224,13 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     }
   }
 
-  Future<void> _editBlockConcept(
-    BuildContext context,
-    NoteBlockV1 block,
-  ) async {
+  Future<void> _editBlockConcept(BuildContext _, NoteBlockV1 block) async {
+    if (!mounted || !_isActive) return;
     final concept = (await _controller.searchConcept(
       study: widget.study,
       query: '',
     )).toList();
-    if (!context.mounted) return;
+    if (!mounted || !_isActive) return;
     final busyConcept = <String>{};
     await showDialog<void>(
       context: context,
@@ -251,7 +267,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                                 if (stored != null) {
                                   concept[index] = stored;
                                 }
-                                if (context.mounted) {
+                                if (mounted && _isActive && context.mounted) {
                                   setDialogState(
                                     () => busyConcept.remove(item.id),
                                   );
@@ -272,17 +288,16 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     );
   }
 
-  Future<void> _onEffect(
-    BuildContext context,
-    LessonEditorEffectV2 effect,
-  ) async {
+  Future<void> _onEffect(BuildContext _, LessonEditorEffectV2 effect) async {
+    if (!mounted || !_isActive) return;
     switch (effect) {
       case LessonEditorFailureEffectV2():
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(content: Text('Не удалось сохранить изменения')),
         );
       case LessonEditorNavigateEffectV2():
-        Navigator.of(context).pop();
+        final navigator = Navigator.maybeOf(context);
+        if (navigator != null && navigator.canPop()) navigator.pop();
       case LessonEditorDraftDecisionEffectV2():
         final action = await showDialog<_DraftAction>(
           context: context,
@@ -305,6 +320,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
             ],
           ),
         );
+        if (!mounted || !_isActive) return;
         switch (action) {
           case _DraftAction.retry:
             _controller.add(const LessonEditorRetrySaveV2());
@@ -317,7 +333,8 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     }
   }
 
-  Future<void> _addBlock(BuildContext context, int position) async {
+  Future<void> _addBlock(BuildContext _, int position) async {
+    if (!mounted || !_isActive) return;
     var type = NoteBlockTypeV1.text;
     final result = await showDialog<NoteBlockTypeV1>(
       context: context,
@@ -345,7 +362,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
         ),
       ),
     );
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _controller.add(
         LessonEditorBlockAddedV2(
           NoteBlockV1(
@@ -361,14 +378,15 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
   }
 
   Future<void> _addTask(
-    BuildContext context,
+    BuildContext _,
     int position, [
     HomeworkTaskV1? existing,
   ]) async {
+    if (!mounted || !_isActive) return;
     final prompt = TextEditingController(text: existing?.promptMarkdown);
     final solution = TextEditingController(text: existing?.solutionMarkdown);
     var dueAt = existing?.dueAt;
-    final result = await showDialog<HomeworkTaskV1>(
+    final result = await showStudyDialogV1<HomeworkTaskV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -412,7 +430,10 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
                           lastDate: DateTime(9999),
                           initialDate: dueAt?.toLocal() ?? DateTime.now(),
                         );
-                        if (selected != null) {
+                        if (selected != null &&
+                            mounted &&
+                            _isActive &&
+                            context.mounted) {
                           setDialogState(() => dueAt = selected.toUtc());
                         }
                       },
@@ -454,7 +475,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     );
     prompt.dispose();
     solution.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _controller.add(
         existing == null
             ? LessonEditorTaskAddedV2(result)
@@ -463,12 +484,13 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     }
   }
 
-  Future<void> _addFile(BuildContext context, List<HomeworkTaskV1> task) async {
+  Future<void> _addFile(BuildContext _, List<HomeworkTaskV1> task) async {
+    if (!mounted || !_isActive) return;
     final relativePath = TextEditingController();
     final language = TextEditingController();
     final content = TextEditingController();
     String? homeworkTaskId;
-    final result = await showDialog<CodeFileV1>(
+    final result = await showStudyDialogV1<CodeFileV1>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -545,7 +567,7 @@ final class _LessonEditorPageV1State extends State<LessonEditorPageV1> {
     relativePath.dispose();
     language.dispose();
     content.dispose();
-    if (result != null) {
+    if (mounted && _isActive && result != null) {
       _controller.add(LessonEditorFileAddedV2(result));
     }
   }
@@ -609,6 +631,7 @@ final class _SaveBadge extends StatelessWidget {
 
 final class _NoteView extends StatelessWidget {
   final List<NoteBlockV1> block;
+  final bool busy;
   final ValueChanged<NoteBlockV1> onChanged;
   final VoidCallback onAdd;
   final ValueChanged<NoteBlockV1> onDelete;
@@ -617,6 +640,7 @@ final class _NoteView extends StatelessWidget {
 
   const _NoteView({
     required this.block,
+    required this.busy,
     required this.onChanged,
     required this.onAdd,
     required this.onDelete,
@@ -638,7 +662,7 @@ final class _NoteView extends StatelessWidget {
                 title: 'Конспект',
                 description: 'Пишите в Markdown и сразу проверяйте результат.',
                 trailing: FilledButton.icon(
-                  onPressed: onAdd,
+                  onPressed: busy ? null : onAdd,
                   icon: const Icon(Icons.add),
                   label: const Text('Добавить блок'),
                 ),
@@ -652,7 +676,7 @@ final class _NoteView extends StatelessWidget {
                       title: 'Конспект пока пуст',
                       description: 'Добавьте первый смысловой блок.',
                       actionLabel: 'Добавить блок',
-                      onAction: onAdd,
+                      onAction: busy ? null : onAdd,
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(18),
@@ -660,6 +684,7 @@ final class _NoteView extends StatelessWidget {
                       itemBuilder: (context, index) => _BlockEditor(
                         key: ValueKey(block[index].id),
                         block: block[index],
+                        busy: busy,
                         onChanged: onChanged,
                         onDelete: () => onDelete(block[index]),
                         onConcept: () => onConcept(block[index]),
@@ -676,6 +701,7 @@ final class _NoteView extends StatelessWidget {
 
 final class _BlockEditor extends StatefulWidget {
   final NoteBlockV1 block;
+  final bool busy;
   final ValueChanged<NoteBlockV1> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onConcept;
@@ -683,6 +709,7 @@ final class _BlockEditor extends StatefulWidget {
 
   const _BlockEditor({
     required this.block,
+    required this.busy,
     required this.onChanged,
     required this.onDelete,
     required this.onConcept,
@@ -701,6 +728,12 @@ final class _BlockEditorState extends State<_BlockEditor> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.block.markdown);
+  }
+
+  @override
+  void didUpdateWidget(_BlockEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTextController(_controller, widget.block.markdown);
   }
 
   @override
@@ -741,22 +774,22 @@ final class _BlockEditorState extends State<_BlockEditor> {
                 const Spacer(),
                 IconButton(
                   tooltip: 'Выше',
-                  onPressed: () => widget.onMove(-1),
+                  onPressed: widget.busy ? null : () => widget.onMove(-1),
                   icon: const Icon(Icons.arrow_upward),
                 ),
                 IconButton(
                   tooltip: 'Ниже',
-                  onPressed: () => widget.onMove(1),
+                  onPressed: widget.busy ? null : () => widget.onMove(1),
                   icon: const Icon(Icons.arrow_downward),
                 ),
                 IconButton(
                   tooltip: 'Связать понятия',
-                  onPressed: widget.onConcept,
+                  onPressed: widget.busy ? null : widget.onConcept,
                   icon: const Icon(Icons.hub_outlined),
                 ),
                 IconButton(
                   tooltip: 'Удалить блок',
-                  onPressed: widget.onDelete,
+                  onPressed: widget.busy ? null : widget.onDelete,
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
@@ -821,6 +854,7 @@ final class _BlockEditorState extends State<_BlockEditor> {
 
 final class _HomeworkView extends StatelessWidget {
   final List<HomeworkTaskV1> task;
+  final bool busy;
   final ValueChanged<HomeworkTaskV1> onChanged;
   final VoidCallback onAdd;
   final ValueChanged<HomeworkTaskV1> onEdit;
@@ -829,6 +863,7 @@ final class _HomeworkView extends StatelessWidget {
 
   const _HomeworkView({
     required this.task,
+    required this.busy,
     required this.onChanged,
     required this.onAdd,
     required this.onEdit,
@@ -850,7 +885,7 @@ final class _HomeworkView extends StatelessWidget {
                 title: 'Домашняя работа',
                 description: 'Условия, решения и сроки выполнения.',
                 trailing: FilledButton.icon(
-                  onPressed: onAdd,
+                  onPressed: busy ? null : onAdd,
                   icon: const Icon(Icons.add_task),
                   label: const Text('Добавить задание'),
                 ),
@@ -864,7 +899,7 @@ final class _HomeworkView extends StatelessWidget {
                       title: 'Заданий пока нет',
                       description: 'Добавьте условие и решение первой задачи.',
                       actionLabel: 'Добавить задание',
-                      onAction: onAdd,
+                      onAction: busy ? null : onAdd,
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(18),
@@ -884,13 +919,15 @@ final class _HomeworkView extends StatelessWidget {
                               children: [
                                 Checkbox(
                                   value: done,
-                                  onChanged: (value) => onChanged(
-                                    item.copyWith(
-                                      status: value ?? false
-                                          ? HomeworkStatusV1.done
-                                          : HomeworkStatusV1.todo,
-                                    ),
-                                  ),
+                                  onChanged: busy
+                                      ? null
+                                      : (value) => onChanged(
+                                          item.copyWith(
+                                            status: value ?? false
+                                                ? HomeworkStatusV1.done
+                                                : HomeworkStatusV1.todo,
+                                          ),
+                                        ),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -929,22 +966,26 @@ final class _HomeworkView extends StatelessWidget {
                                 ),
                                 IconButton(
                                   tooltip: 'Выше',
-                                  onPressed: () => onMove(item, -1),
+                                  onPressed: busy
+                                      ? null
+                                      : () => onMove(item, -1),
                                   icon: const Icon(Icons.arrow_upward),
                                 ),
                                 IconButton(
                                   tooltip: 'Ниже',
-                                  onPressed: () => onMove(item, 1),
+                                  onPressed: busy
+                                      ? null
+                                      : () => onMove(item, 1),
                                   icon: const Icon(Icons.arrow_downward),
                                 ),
                                 IconButton(
                                   tooltip: 'Изменить задание',
-                                  onPressed: () => onEdit(item),
+                                  onPressed: busy ? null : () => onEdit(item),
                                   icon: const Icon(Icons.edit_outlined),
                                 ),
                                 IconButton(
                                   tooltip: 'Удалить задание',
-                                  onPressed: () => onDelete(item),
+                                  onPressed: busy ? null : () => onDelete(item),
                                   icon: const Icon(Icons.delete_outline),
                                 ),
                               ],
@@ -963,12 +1004,14 @@ final class _HomeworkView extends StatelessWidget {
 
 final class _FileView extends StatelessWidget {
   final List<CodeFileV1> file;
+  final bool busy;
   final ValueChanged<CodeFileV1> onChanged;
   final VoidCallback onAdd;
   final ValueChanged<CodeFileV1> onDelete;
 
   const _FileView({
     required this.file,
+    required this.busy,
     required this.onChanged,
     required this.onAdd,
     required this.onDelete,
@@ -988,7 +1031,7 @@ final class _FileView extends StatelessWidget {
                 title: 'Файлы',
                 description: 'UTF-8 файлы урока и домашних заданий.',
                 trailing: FilledButton.icon(
-                  onPressed: onAdd,
+                  onPressed: busy ? null : onAdd,
                   icon: const Icon(Icons.note_add_outlined),
                   label: const Text('Добавить файл'),
                 ),
@@ -1002,7 +1045,7 @@ final class _FileView extends StatelessWidget {
                       title: 'Файлов пока нет',
                       description: 'Добавьте исходный код или текстовый файл.',
                       actionLabel: 'Добавить файл',
-                      onAction: onAdd,
+                      onAction: busy ? null : onAdd,
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(18),
@@ -1010,6 +1053,7 @@ final class _FileView extends StatelessWidget {
                       itemBuilder: (context, index) => _CodeFileEditor(
                         key: ValueKey(file[index].id),
                         file: file[index],
+                        busy: busy,
                         onSaved: onChanged,
                         onDelete: () => onDelete(file[index]),
                       ),
@@ -1024,11 +1068,13 @@ final class _FileView extends StatelessWidget {
 
 final class _CodeFileEditor extends StatefulWidget {
   final CodeFileV1 file;
+  final bool busy;
   final ValueChanged<CodeFileV1> onSaved;
   final VoidCallback onDelete;
 
   const _CodeFileEditor({
     required this.file,
+    required this.busy,
     required this.onSaved,
     required this.onDelete,
     super.key,
@@ -1045,6 +1091,12 @@ final class _CodeFileEditorState extends State<_CodeFileEditor> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.file.content);
+  }
+
+  @override
+  void didUpdateWidget(_CodeFileEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTextController(_controller, widget.file.content);
   }
 
   @override
@@ -1068,18 +1120,22 @@ final class _CodeFileEditorState extends State<_CodeFileEditor> {
                 Expanded(
                   child: Text(
                     widget.file.relativePath,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
                 FilledButton.tonal(
-                  onPressed: () => widget.onSaved(
-                    widget.file.copyWith(content: _controller.text),
-                  ),
+                  onPressed: widget.busy
+                      ? null
+                      : () => widget.onSaved(
+                          widget.file.copyWith(content: _controller.text),
+                        ),
                   child: const Text('Сохранить'),
                 ),
                 IconButton(
                   tooltip: 'Удалить файл',
-                  onPressed: widget.onDelete,
+                  onPressed: widget.busy ? null : widget.onDelete,
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
@@ -1121,4 +1177,18 @@ bool _isValidRelativePath(String value) {
       !value.startsWith('/') &&
       !value.contains(r'\') &&
       part.every((item) => item.isNotEmpty && item != '.' && item != '..');
+}
+
+void _syncTextController(TextEditingController controller, String text) {
+  if (controller.text == text) return;
+  final oldOffset = controller.selection.baseOffset;
+  final offset = oldOffset < 0
+      ? 0
+      : oldOffset > text.length
+      ? text.length
+      : oldOffset;
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: offset),
+  );
 }

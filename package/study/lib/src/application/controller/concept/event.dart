@@ -87,6 +87,15 @@ final class ConceptRelationDeletedV1 extends ConceptEventV1 {
   List<Object?> get props => [relation.id, relation.version];
 }
 
+final class _ConceptMutationQueuedV1 extends ConceptEventV1 {
+  final ConceptEventV1 event;
+
+  const _ConceptMutationQueuedV1(this.event);
+
+  @override
+  List<Object?> get props => [event];
+}
+
 int _conceptEventHash(ConceptV1 value) => Object.hashAll([
   value.studyId,
   value.title,

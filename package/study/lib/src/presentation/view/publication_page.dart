@@ -21,6 +21,7 @@ final class PublicationPageV1 extends StatefulWidget {
 
 final class _PublicationPageV1State extends State<PublicationPageV1> {
   late final PublicationControllerV2 _controller;
+  var _isActive = true;
   final _message = TextEditingController(
     text: 'docs(study): update learning progress',
   );
@@ -38,6 +39,18 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
     if (oldWidget.study.id != widget.study.id) {
       _controller.add(PublicationPreviewRequestedV2(widget.study));
     }
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    super.deactivate();
   }
 
   @override
@@ -275,6 +288,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
   }
 
   Future<void> _confirm() async {
+    if (!mounted || !_isActive) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -294,7 +308,7 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
         ],
       ),
     );
-    if (confirmed ?? false) {
+    if (mounted && _isActive && (confirmed ?? false)) {
       _controller.add(
         PublicationConfirmedV2(
           PublicationCommitV1(message: _message.text.trim()),
@@ -303,12 +317,13 @@ final class _PublicationPageV1State extends State<PublicationPageV1> {
     }
   }
 
-  void _onEffect(BuildContext context, PublicationEffectV2 effect) {
+  void _onEffect(BuildContext _, PublicationEffectV2 effect) {
+    if (!mounted || !_isActive) return;
     final message = switch (effect) {
       PublicationFailureEffectV2() => 'Публикация не выполнена',
       PublicationSuccessEffectV2() => 'Изменения опубликованы',
     };
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
   }
 }

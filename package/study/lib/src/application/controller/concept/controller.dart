@@ -25,11 +25,12 @@ final class ConceptControllerV1
     on<ConceptStartedV1>(_onStarted, transformer: restartable());
     on<ConceptSelectedV1>(_onSelected, transformer: restartable());
     on<ConceptSearchChangedV1>(_onSearch, transformer: restartable());
-    on<ConceptCreatedV1>(_onCreated, transformer: sequential());
-    on<ConceptUpdatedV1>(_onUpdated, transformer: sequential());
-    on<ConceptArchiveChangedV1>(_onArchiveChanged, transformer: sequential());
-    on<ConceptRelationAddedV1>(_onRelationAdded, transformer: sequential());
-    on<ConceptRelationDeletedV1>(_onRelationDeleted, transformer: sequential());
+    on<_ConceptMutationQueuedV1>(_onMutationQueued, transformer: sequential());
+    on<ConceptCreatedV1>(_queueMutation);
+    on<ConceptUpdatedV1>(_queueMutation);
+    on<ConceptArchiveChangedV1>(_queueMutation);
+    on<ConceptRelationAddedV1>(_queueMutation);
+    on<ConceptRelationDeletedV1>(_queueMutation);
   }
 
   Future<void> _onStarted(
@@ -81,30 +82,54 @@ final class ConceptControllerV1
     );
   }
 
-  Future<void> _onCreated(
-    ConceptCreatedV1 event,
-    Emitter<ConceptStateV1> emit,
-  ) => _mutate(ConceptCreateV1(event.concept), emit);
+  void _queueMutation(ConceptEventV1 event, Emitter<ConceptStateV1> emit) {
+    add(_ConceptMutationQueuedV1(event));
+  }
 
-  Future<void> _onUpdated(
-    ConceptUpdatedV1 event,
+  Future<void> _onMutationQueued(
+    _ConceptMutationQueuedV1 queued,
     Emitter<ConceptStateV1> emit,
-  ) => _mutate(ConceptUpdateV1(event.concept), emit);
+  ) async {
+    final mutation = _mutationFor(queued.event);
+    if (mutation != null) await _mutate(mutation, emit);
+  }
 
-  Future<void> _onArchiveChanged(
-    ConceptArchiveChangedV1 event,
-    Emitter<ConceptStateV1> emit,
-  ) => _mutate(ConceptArchiveV1(event.concept), emit);
-
-  Future<void> _onRelationAdded(
-    ConceptRelationAddedV1 event,
-    Emitter<ConceptStateV1> emit,
-  ) => _mutate(ConceptPutRelationV1(event.relation), emit);
-
-  Future<void> _onRelationDeleted(
-    ConceptRelationDeletedV1 event,
-    Emitter<ConceptStateV1> emit,
-  ) => _mutate(ConceptDeleteRelationV1(event.relation), emit);
+  ConceptMutationV1? _mutationFor(ConceptEventV1 event) {
+    final graph = state.graph;
+    switch (event) {
+      case ConceptCreatedV1(:final concept):
+        return ConceptCreateV1(concept);
+      case ConceptUpdatedV1(:final concept):
+        final current = graph?.concept
+            .where((value) => value.id == concept.id)
+            .firstOrNull;
+        return current == null
+            ? null
+            : ConceptUpdateV1(
+                concept.copyWith(
+                  version: current.version,
+                  isArchived: current.isArchived,
+                ),
+              );
+      case ConceptArchiveChangedV1(:final concept):
+        final current = graph?.concept
+            .where((value) => value.id == concept.id)
+            .firstOrNull;
+        if (current == null || current.isArchived != concept.isArchived) {
+          return null;
+        }
+        return ConceptArchiveV1(current);
+      case ConceptRelationAddedV1(:final relation):
+        return ConceptPutRelationV1(relation);
+      case ConceptRelationDeletedV1(:final relation):
+        final current = graph?.relation
+            .where((value) => value.id == relation.id)
+            .firstOrNull;
+        return current == null ? null : ConceptDeleteRelationV1(current);
+      default:
+        return null;
+    }
+  }
 
   Future<void> _mutate(
     ConceptMutationV1 mutation,
@@ -130,7 +155,7 @@ final class ConceptControllerV1
             failure: () => null,
           ),
         );
-        add(ConceptSearchChangedV1(state.search.query));
+        if (!isClosed) add(ConceptSearchChangedV1(state.search.query));
       },
     );
   }

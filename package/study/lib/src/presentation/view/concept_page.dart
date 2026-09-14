@@ -24,6 +24,7 @@ final class ConceptPageV1 extends StatefulWidget {
 
 final class _ConceptPageV1State extends State<ConceptPageV1> {
   final _search = TextEditingController();
+  var _isActive = true;
 
   @override
   void initState() {
@@ -37,6 +38,18 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     if (oldWidget.study.id != widget.study.id) {
       widget.controller.add(ConceptStartedV1(widget.study));
     }
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _isActive = false;
+    super.deactivate();
   }
 
   @override
@@ -56,7 +69,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             ConceptEffectV1
           >(
             bloc: widget.controller,
-            listener: (context, effect) {
+            listener: (_, effect) {
               if (effect is ConceptFailureEffectV1) _showFailure();
             },
             builder: _build,
@@ -171,6 +184,41 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
             onAddRelation: () => _addRelation(selected),
             onDeleteRelation: _deleteRelation,
           );
+    final graphContent = graph.concept.length == 1
+        ? InteractiveViewer(
+            minScale: 0.1,
+            maxScale: 3,
+            child: Center(
+              child: _conceptChip(
+                concept: graph.concept.single,
+                selectedConceptId: state.selectedConcept?.id,
+              ),
+            ),
+          )
+        : InteractiveViewer(
+            constrained: false,
+            boundaryMargin: const EdgeInsets.all(120),
+            minScale: 0.1,
+            maxScale: 3,
+            child: GraphView(
+              key: ValueKey(_topologyKey(graph)),
+              graph: view.$1,
+              algorithm: FruchtermanReingoldAlgorithm(
+                FruchtermanReingoldConfiguration(iterations: 250),
+              ),
+              animated: false,
+              paint: Paint()
+                ..color = Theme.of(context).colorScheme.outline
+                ..strokeWidth = 1.2,
+              builder: (node) {
+                final id = node.key?.value as String;
+                return _conceptChip(
+                  concept: view.$2[id]!,
+                  selectedConceptId: state.selectedConcept?.id,
+                );
+              },
+            ),
+          );
     final canvas = StudySurface(
       padding: EdgeInsets.zero,
       child: Column(
@@ -182,35 +230,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
               color: studyWarningColor.withValues(alpha: 0.1),
               child: const Text('Показан выбранный узел и два уровня соседей.'),
             ),
-          Expanded(
-            child: InteractiveViewer(
-              constrained: false,
-              boundaryMargin: const EdgeInsets.all(120),
-              minScale: 0.1,
-              maxScale: 3,
-              child: GraphView(
-                graph: view.$1,
-                algorithm: FruchtermanReingoldAlgorithm(
-                  FruchtermanReingoldConfiguration(iterations: 250),
-                ),
-                paint: Paint()
-                  ..color = Theme.of(context).colorScheme.outline
-                  ..strokeWidth = 1.2,
-                builder: (node) {
-                  final id = node.key?.value as String;
-                  final concept = view.$2[id]!;
-                  final selected = concept.id == state.selectedConcept?.id;
-                  return InputChip(
-                    selected: selected,
-                    label: Text(concept.title),
-                    onPressed: () => _select(concept),
-                    onDeleted: selected ? () => _edit(concept) : null,
-                    deleteIcon: const Icon(Icons.edit_outlined, size: 18),
-                  );
-                },
-              ),
-            ),
-          ),
+          Expanded(child: graphContent),
         ],
       ),
     );
@@ -253,12 +273,48 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
     return (graph, concepts);
   }
 
+  Widget _conceptChip({
+    required ConceptV1 concept,
+    required String? selectedConceptId,
+  }) {
+    final selected = concept.id == selectedConceptId;
+    return InputChip(
+      key: ValueKey(concept.id),
+      selected: selected,
+      label: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 240),
+        child: Text(
+          concept.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      onPressed: () => _select(concept),
+      onDeleted: selected ? () => _edit(concept) : null,
+      deleteIcon: const Icon(Icons.edit_outlined, size: 18),
+    );
+  }
+
+  String _topologyKey(ConceptGraphV1 graph) {
+    final concept = graph.concept.map((value) => value.id).toList()..sort();
+    final relation =
+        graph.relation
+            .map(
+              (value) =>
+                  '${value.sourceConceptId}:${value.targetConceptId}:'
+                  '${value.type.name}',
+            )
+            .toList()
+          ..sort();
+    return '${concept.join('|')}#${relation.join('|')}';
+  }
+
   void _select(ConceptV1 concept) =>
       widget.controller.add(ConceptSelectedV1(concept));
 
   Future<void> _create() async {
     final value = await _showEditor();
-    if (value == null) {
+    if (!mounted || !_isActive || value == null) {
       return;
     }
     final id = const Uuid().v4();
@@ -281,7 +337,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
 
   Future<void> _edit(ConceptV1 concept) async {
     final value = await _showEditor(concept: concept);
-    if (value == null) {
+    if (!mounted || !_isActive || value == null) {
       return;
     }
     widget.controller.add(
@@ -300,6 +356,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   }
 
   Future<void> _addRelation(ConceptV1 source) async {
+    if (!mounted || !_isActive) return;
     final graph = widget.controller.state.graph;
     if (graph == null) {
       return;
@@ -324,12 +381,17 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: targetId,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Понятие'),
                   items: [
                     for (final concept in target)
                       DropdownMenuItem(
                         value: concept.id,
-                        child: Text(concept.title),
+                        child: Text(
+                          concept.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   onChanged: (value) =>
@@ -373,7 +435,7 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
         ),
       ),
     );
-    if (relation == null) {
+    if (!mounted || !_isActive || relation == null) {
       return;
     }
     widget.controller.add(ConceptRelationAddedV1(relation));
@@ -385,13 +447,14 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   Future<(String, String, List<String>)?> _showEditor({
     ConceptV1? concept,
   }) async {
+    if (!mounted || !_isActive) return null;
     final title = TextEditingController(text: concept?.title);
     final description = TextEditingController(
       text: concept?.descriptionMarkdown,
     );
     final aliases = TextEditingController(text: concept?.aliases.join(', '));
     String? error;
-    final result = await showDialog<(String, String, List<String>)>(
+    final result = await showStudyDialogV1<(String, String, List<String>)>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -459,7 +522,8 @@ final class _ConceptPageV1State extends State<ConceptPageV1> {
   }
 
   void _showFailure() {
-    ScaffoldMessenger.of(context).showSnackBar(
+    if (!mounted || !_isActive) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       const SnackBar(content: Text('Не удалось выполнить операцию')),
     );
   }
